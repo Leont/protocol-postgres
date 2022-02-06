@@ -4,7 +4,9 @@
     "Leon Timmermans"
   ],
   "build-depends" : [ ],
-  "depends" : [ ],
+  "depends" : [
+    "OpenSSL"
+  ],
   "description" : "blah blah blah",
   "license" : "Artistic-2.0",
   "name" : "Protocol::Postgres",

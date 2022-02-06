@@ -1,0 +1,36 @@
+#! raku
+
+use Test;
+
+use Protocol::Postgres;
+
+for client-cases() -> $case {
+	my $encoded = $case.encode;
+	my $decoder = Protocol::Postgres::PacketDecoder.new(:buffer($encoded), :type(Protocol::Postgres::Back));
+	my $decoded = $decoder.read-packet;
+	is-deeply($case, $decoded, $case.^name);
+}
+
+for server-cases() -> $case {
+	my $encoded = $case.encode;
+	my $decoder = Protocol::Postgres::PacketDecoder.new(:buffer($encoded), :type(Protocol::Postgres::Front));
+	my $decoded = $decoder.read-packet;
+	is-deeply($case, $decoded, $case.^name);
+}
+
+done-testing;
+
+sub client-cases {
+	(
+		Protocol::Postgres::Packet::Close.new(:type(Protocol::Postgres::Prepared), :name<bar>),
+		Protocol::Postgres::Packet::FunctionCall.new(:1234object-id),
+	);
+}
+
+sub server-cases {
+	(
+		Protocol::Postgres::Packet::AuthenticationMD5Password.new(:salt(Blob(1,2,3,4))),
+		Protocol::Postgres::Packet::RowDescription.new(:fields[Protocol::Postgres::FieldDescription.new(:name<eman>, :1type-id, :4type-size)]),
+		Protocol::Postgres::Packet::ErrorResponse.new(:values(:{ Protocol::Postgres::ErrorCode => '1'})),
+	);
+}

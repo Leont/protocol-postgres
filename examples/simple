@@ -1,0 +1,33 @@
+#! raku
+
+use v6.d;
+
+use Protocol::Postgres;
+
+unit sub MAIN(Str :$user = ~$*USER, Str :$database = 'test', Str :$password, :$host = 'localhost', :$port = 5432);
+
+my $socket = await IO::Socket::Async.connect($host, $port);
+my $client = Protocol::Postgres::Client.new;
+$socket.Supply(:bin).act({ $client.incoming-data($^data) });
+$client.outbound-data.act({ await $socket.write($^data) });
+
+await $client.startup($user, $database, $password);
+
+for lines() {
+	when / ^ '\\'? q[uit]? / {
+		$client.terminate;
+		last;
+	}
+	when / ^ p['arameter ']? $<parameter>=[\w+] / {
+		say $client.get-parameter(~$<parameter>);
+	}
+	default {
+		my $resultset = await $client.query(~$_);
+		CATCH { default { say .message } }
+		react {
+			whenever $resultset.hash-rows -> $row {
+				dd $row;
+			}
+		}
+	}
+}

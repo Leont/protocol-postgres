@@ -1,0 +1,40 @@
+#! raku
+
+use Test;
+
+use Protocol::Postgres;
+
+sub unhex(Str $input) {
+	Blob.new($input.comb(/<xdigit>**2/).map({ :16($_) }));
+}
+
+my @cases = [
+	[ Protocol::Postgres::OpenPacket::StartupMessage.new(:parameters({:user<testuser>})), '00 00 00 17 00 03 00 00 75 73 65 72 00 74 65 73 74 75 73 65 72 00 00' ],
+	[ Protocol::Postgres::Packet::PasswordMessage.new(:password<test>), '70 00 00 00 09 74 65 73 74 00' ],
+	[ Protocol::Postgres::Packet::AuthenticationOk.new, '52 00 00 00 08 00 00 00 00' ],
+	[ Protocol::Postgres::Packet::ReadyForQuery.new(:status(Protocol::Postgres::Idle)), '5A 00 00 00 05 49' ],
+	[ Protocol::Postgres::Packet::Query.new(:query('select 1 as "name" from "table"')), '51 00 00 00 24 73 65 6c 65 63 74 20 31 20 61 73 20 22 6e 61 6d 65 22 20 66 72 6f 6d 20 22 74 61 62 6c 65 22 00' ],
+	[ Protocol::Postgres::Packet::EmptyQueryResponse.new, '49 00 00 00 04' ],
+	[ Protocol::Postgres::Packet::RowDescription.new(:fields[Protocol::Postgres::FieldDescription.new(:name<name>, :1type, :4size)]), '54 00 00 00 1D 00 01 6e 61 6d 65 00 00 00 00 00 00 00 00 00 00 01 00 04 00 00 00 00 00 00' ],
+	[ Protocol::Postgres::Packet::DataRow.new(:values[Blob.new(49)]), '44 00 00 00 0B 00 01 00 00 00 01 31' ],
+	[ Protocol::Postgres::Packet::CommandComplete.new(:command('SELECT 1')), '43 00 00 00 0D 53 45 4c 45 43 54 20 31 00' ],
+	[ Protocol::Postgres::Packet::RowDescription.new(:fields[Protocol::Postgres::FieldDescription.new(:name<id>, :1type, :4size), Protocol::Postgres::FieldDescription.new(:name<name>, :1type, :4size)]) , '54 00 00 00 32 00 02 69 64 00 00 00 00 00 00 00 00 00 00 01 00 04 00 00 00 00 00 00 6e 61 6d 65 00 00 00 00 00 00 00 00 00 00 01 00 04 00 00 00 00 00 00'],
+	[ Protocol::Postgres::Packet::NoticeResponse.new(:values(:{Protocol::Postgres::SeverityLocalized => 'INFO', Protocol::Postgres::ErrorCode => '123', Protocol::Postgres::Message => "Some info text", Protocol::Postgres::Detail => 'Longer information here'})), '4e 00 00 00 39 43 31 32 33 00 44 4c 6f 6e 67 65 72 20 69 6e 66 6f 72 6d 61 74 69 6f 6e 20 68 65 72 65 00 4d 53 6f 6d 65 20 69 6e 66 6f 20 74 65 78 74 00 53 49 4e 46 4f 00 00' ],
+];
+
+for @cases -> ($made, $expected-raw) {
+	subtest $made.^name, {
+		my $expected = unhex($expected-raw);
+
+		my $encoded = $made.encode;
+		is($encoded, $expected, 'encode');
+
+		my $offset = $made ~~ Protocol::Postgres::Packet::Base ?? 1 !! 0;
+		my $expected-length = $encoded.read-int32($offset, BigEndian);
+		is($encoded.elems, $expected-length + $offset, 'length');
+		my $decoded = $made.WHAT.decode($expected);
+		is-deeply($decoded, $made, 'decode');
+	}
+}
+
+done-testing;
