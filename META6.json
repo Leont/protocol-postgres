@@ -5,6 +5,7 @@
   ],
   "build-depends" : [ ],
   "depends" : [
+    "Auth::SCRAM::Async",
     "OpenSSL"
   ],
   "description" : "blah blah blah",

@@ -665,6 +665,27 @@ role Authenticator {
 class Authenticator::Null does Authenticator {
 }
 
+my class Authenticator::SCRAM does Authenticator {
+	has $.scram is required;
+	multi method incoming-message(Packet::AuthenticationSASLContinue $ (:$server-payload), Promise $startup-promise, &send-message) {
+		try {
+			my $client-payload = $!scram.final-message($server-payload.decode).encode;
+			CATCH { default {
+				$startup-promise.break("Invalid server message: {.message}", )
+			}}
+			send-message(Packet::SASLResponse.new(:$client-payload));
+		}
+		self;
+	}
+	multi method incoming-message(Packet::AuthenticationSASLFinal $ (:$server-payload), Promise $startup-promise, &send-message) {
+		if not try $!scram.validate($server-payload.decode) {
+			my $reason = 'Could not validate final server message: ' ~ ($! // 'did not verify');
+			$startup-promise.break($reason);
+		}
+		self;
+	}
+}
+
 class Authenticator::Password does Authenticator {
 	has Str:D $.user is required;
 	has Str:D $.password is required;
@@ -684,6 +705,24 @@ class Authenticator::Password does Authenticator {
 			send-message(Packet::PasswordMessage.new(:$password));
 		} else {
 			$startup-promise.break('Could not load MD5 module');
+		}
+		self;
+	}
+
+	multi method incoming-message(Packet::AuthenticationSASL $ (:@mechanisms), Promise $startup-promise, &send-message) {
+		if any(@mechanisms) eq 'SCRAM-SHA-256' {
+			require Auth::SCRAM::Async;
+			my $class = ::('Auth::SCRAM::Async::Client');
+			if $class !=== Any {
+				my $scram = $class.new(:username($!user), :$!password, :digest(::('Auth::SCRAM::Async::SHA256')));
+				my $initial-response = $scram.first-message.encode;
+				send-message(Packet::SASLInitialResponse.new(:mechanism<SCRAM-SHA-256>, :$initial-response));
+				return Authenticator::SCRAM.new(:$scram);
+			} else {
+				$startup-promise.break('Could not load SCRAM module');
+			}
+		} else {
+			$startup-promise.break("Client does not support SASL mechanisms: @mechanisms[]");
 		}
 		self;
 	}
