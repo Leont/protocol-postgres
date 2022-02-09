@@ -846,11 +846,12 @@ my class Protocol::Query does Protocol {
 	}
 }
 
+my enum Stage (:Parsing<parse>, :Binding<bind>, :Describing<describe>, :Executing<execute>, :Closing<close>, :Syncing<sync>);
+
 my class Protocol::ExtendedQuery does Protocol {
 	has Promise:D $.result is required;
 	has ResultSet::Source $!source;
-	my enum Stage (:Parsing<parse>, :Binding<bind>, :Describing<describe>, :Executing<execute>, :Closing<close>, :Syncing<sync>);
-	has Stage $!stage = Parsing;
+	has Stage:D $.stage = Parsing;
 	multi method incoming-message(Packet::ParseComplete $) {
 		$!stage = Binding;
 	}
@@ -889,6 +890,59 @@ my class Protocol::ExtendedQuery does Protocol {
 	}
 }
 
+class Client { ... }
+
+class PreparedStatement {
+	has Client:D $.client is required;
+	has Str:D $.name is required;
+	has Int:D $.expected-args is required;
+	has Bool $!closed = False;
+	method execute(*@args) {
+		die 'Prepared statement already closed' if $!closed;
+		die "Wrong number or arguments, got {+@args} expected $!expected-args" if @args != $!expected-args;
+		$!client.execute-prepared(self, @args);
+	}
+	method close(--> Promise) {
+		$!closed = True;
+		$!client.close-prepared($!name);
+	}
+	method DESTROY() {
+		self.close unless $!closed;
+	}
+}
+
+my class Protocol::Prepare does Protocol {
+	has Client:D $.client is required;
+	has Str:D $.name is required;
+	has Promise:D $.result is required;
+	has Int $!expected-args;
+	multi method incoming-message(Packet::ParseComplete $) {
+	}
+	multi method incoming-message(Packet::RowDescription $ (:@fields)) {
+	}
+	multi method incoming-message(Packet::ParameterDescription $ (:@types)) {
+		$!expected-args = +@types;
+	}
+	method finished() {
+		$!result.keep(PreparedStatement.new(:$!name, :$!client, :$!expected-args));
+	}
+	method failed(%values) {
+		$!result.break("Could not prepare: %values{Message}");
+	}
+}
+
+my class Protocol::Close does Protocol {
+	has Promise $.result is required;
+	multi method incoming-message(Packet::CloseComplete $) {
+	}
+	method finished() {
+		$!result.keep unless $!result;
+	}
+	method failed(%values) {
+		$!result.break(X::Server.new("Could not close prepared statement", %values));
+	}
+}
+
 class Notification {
 	has Int:D $.sender is required;
 	has Str:D $.channel is required;
@@ -902,6 +956,7 @@ class Client {
 	has Supply $!outbound-data;
 	has Supplier $!notifications handles(:notifications<Supply>) = Supplier.new;
 	has PacketDecoder $!decoder = PacketDecoder.new;
+	has Int $!prepare-counter = 0;
 
 	has Int $!process-id handles(:process-id<self>);
 	has Int $!secret-key;
@@ -1017,6 +1072,33 @@ class Client {
 			Packet::Bind.new(:formats($encoding.formats), :fields($encoding.encode(@values))),
 			Packet::Describe.new, Packet::Execute.new, Packet::Close.new(:type(Prepared)), Packet::Sync.new,
 		]);
+		$result;
+	}
+
+	method prepare(Str $query, Str :$name = "prepared-{++$!prepare-counter}" --> Promise) {
+		my $result = Promise.new;
+		my $protocol = Protocol::Prepare.new(:client(self), :$name, :$result);
+		self!submit($protocol, [
+			Packet::Parse.new(:$query, :$name), Packet::Describe.new(:$name, :type(Prepared)), Packet::Sync.new,
+		]);
+		$result;
+	}
+
+	method execute-prepared(PreparedStatement $prepared, @values) {
+		my $result = Promise.new;
+		my $encoding = fieldencoding-for-values(@values);
+		my $protocol = Protocol::ExtendedQuery.new(:$result, :stage(Binding));
+		self!submit($protocol, [
+			Packet::Bind.new(:name($prepared.name), :formats($encoding.formats), :fields($encoding.encode(@values))),
+			Packet::Describe.new, Packet::Execute.new, Packet::Close.new(:type(Portal)), Packet::Sync.new
+		]);
+		$result;
+	}
+
+	method close-prepared(PreparedStatement $prepared) {
+		my $result = Promise.new;
+		my $protocol = Protocol::Close.new(:$result);
+		self!submit($protocol, [ Packet::Close.new(:name($prepared.name), :type(Prepared)), Packet::Sync.new ]);
 		$result;
 	}
 
