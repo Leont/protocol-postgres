@@ -907,6 +907,39 @@ class Client {
 	has Int $!secret-key;
 	has Str %!parameters handles(:get-parameter<AT-KEY>);
 
+	my class Task {
+		has Protocol:D $.protocol is required;
+		has Packet::Base:D @.packets is required;
+	}
+	has Task @!tasks;
+
+	method !send($packet) {
+		$!outbound-messages.emit($packet);
+	}
+
+	method !send-next($protocol, @packets) {
+		$!protocol = $protocol;
+		for @packets -> $packet {
+			self!send($packet);
+		}
+	}
+
+	method !handle-next() {
+		with @!tasks.shift -> (:$protocol, :@packets) {
+			self!send-next($protocol, @packets);
+		} else {
+			$!protocol = Nil;
+		}
+	}
+
+	method !submit(Protocol:D $protocol, @packets) {
+		if $!protocol or not $!startup-promise {
+			@!tasks.push(Task.new(:$protocol, :@packets));
+		} else {
+			self!send-next($protocol, @packets);
+		}
+	}
+
 	method outbound-data() {
 		$!outbound-data //= $!outbound-messages.Supply.map(*.encode);
 	}
@@ -936,20 +969,11 @@ class Client {
 		$!protocol.failed(%values);
 	}
 	multi method incoming-message(Packet::ReadyForQuery $) {
-		$!protocol.finished with $!protocol;
-		$!protocol = Nil;
-		if not $!startup-promise {
-			$!startup-promise.keep;
-		}
+		$!protocol.finished;
+		self!handle-next;
 	}
 	multi method incoming-message(Packet::Base $packet) {
 		$!protocol.incoming-message($packet) with $!protocol;
-	}
-
-	method !send(*@packets) {
-		for @packets -> $packet {
-			$!outbound-messages.emit($packet)
-		}
 	}
 
 	method startTls(--> Blob) {
@@ -968,10 +992,8 @@ class Client {
 	}
 
 	method query-multiple(Str $query --> Supply) {
-		die 'Already active' with $!protocol;
 		my $supplier = Supplier::Preserving.new;
-		$!protocol = Protocol::Query.new(:$supplier);
-		self!send(Packet::Query.new(:$query));
+		self!submit(Protocol::Query.new(:$supplier), [ Packet::Query.new(:$query) ]);
 		$supplier.Supply;
 	}
 
@@ -987,15 +1009,14 @@ class Client {
 	}
 
 	method query(Str $query, *@values --> Promise) {
-		die 'Already active' with $!protocol;
 		my $result = Promise.new;
-		$!protocol = Protocol::ExtendedQuery.new(:$result);
+		my $protocol = Protocol::ExtendedQuery.new(:$result);
 		my $encoding = fieldencoding-for-values(@values);
-		self!send(
+		self!submit($protocol, [
 			Packet::Parse.new(:$query),
 			Packet::Bind.new(:formats($encoding.formats), :fields($encoding.encode(@values))),
 			Packet::Describe.new, Packet::Execute.new, Packet::Close.new(:type(Prepared)), Packet::Sync.new,
-		);
+		]);
 		$result;
 	}
 
