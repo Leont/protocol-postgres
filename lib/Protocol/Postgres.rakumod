@@ -682,6 +682,10 @@ role Authenticator {
 }
 
 class Authenticator::Null does Authenticator {
+	multi method incoming-message(Packet::Authentication $packet, Promise $startup-promise, &send-message) {
+		$startup-promise.break(X::Client.new('Password required but not given'));
+		self;
+	}
 }
 
 my class Authenticator::SCRAM does Authenticator {
