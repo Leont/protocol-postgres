@@ -932,12 +932,12 @@ class PreparedStatement {
 	has Client:D $.client is required;
 	has Str:D $.name is required;
 	has Int:D $.expected-args is required;
-	has ResultSet:U $.resultset is required;
 	has Bool $!closed = False;
+	method resultset-class() { ResultSet }
 	method execute(*@args) {
 		die X::Client.new('Prepared statement already closed') if $!closed;
 		die X::Client.new("Wrong number or arguments, got {+@args} expected $!expected-args") if @args != $!expected-args;
-		$!client.execute-prepared(self, @args, :$!resultset);
+		$!client.execute-prepared(self, @args, :resultset(self.resultset));
 	}
 	method close(--> Promise) {
 		$!closed = True;
@@ -952,7 +952,7 @@ my class Protocol::Prepare does Protocol {
 	has Client:D $.client is required;
 	has Str:D $.name is required;
 	has Promise:D $.result is required;
-	has ResultSet:U $.resultset is required;
+	has PreparedStatement:U $.prepared-statement is required;
 	has Int $!expected-args;
 	multi method incoming-message(Packet::ParseComplete $) {
 	}
@@ -962,7 +962,7 @@ my class Protocol::Prepare does Protocol {
 		$!expected-args = +@types;
 	}
 	method finished() {
-		$!result.keep(PreparedStatement.new(:$!name, :$!client, :$!expected-args, :$!resultset));
+		$!result.keep($!prepared-statement.new(:$!name, :$!client, :$!expected-args));
 	}
 	method failed(%values) {
 		$!result.break(X::Server.new('Could not prepare', %values));
@@ -1113,9 +1113,9 @@ class Client {
 		$result;
 	}
 
-	method prepare(Str $query, Str :$name = "prepared-{++$!prepare-counter}", ResultSet:U :$resultset --> Promise) {
+	method prepare(Str $query, Str :$name = "prepared-{++$!prepare-counter}", PreparedStatement:U :$prepared-statement --> Promise) {
 		my $result = Promise.new;
-		my $protocol = Protocol::Prepare.new(:client(self), :$name, :$result, :$resultset);
+		my $protocol = Protocol::Prepare.new(:client(self), :$name, :$result, :$prepared-statement);
 		self!submit($protocol, [
 			Packet::Parse.new(:$query, :$name), Packet::Describe.new(:$name, :type(Prepared)), Packet::Sync.new,
 		]);
