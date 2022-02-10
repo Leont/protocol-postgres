@@ -1,5 +1,25 @@
 unit module Protocol::Postgres:ver<0.0.1>:auth<cpan:LEONT>;
 
+enum ErrorField (:SeverityLocalized(83), :Severity(86), :ErrorCode(67), :Message(77), :Detail(68), :Hint(72), :Position(80), :InternalPosition(112), :InternalQuery(113), :Where(87), :SchemaName(115), :Table(116), :Column(99), :Datatype(100), :Constraint(110), :File(70), :Line(76), :Routine(82));
+
+class X::Client is Exception {
+	has Str:D $.message is required;
+	method new(Str:D $message) {
+		self.bless(:$message);
+	}
+}
+
+class X::Server is Exception {
+	has Str:D $.prefix is required;
+	has Str:D %.values{ErrorField} is required;
+	method new(Str:D $prefix, Hash[Str,ErrorField] $values) {
+		self.bless(:$prefix, :$values);
+	}
+	method message(--> Str) {
+		"$!prefix: %!values{Message}";
+	}
+}
+
 class EncodeBuffer {
 	has Buf:D $!buffer = Buf.new;
 	method buffer() { Blob.new($!buffer) }
@@ -441,7 +461,6 @@ class Packet::EmptyQueryResponse does Packet::Base {
 	method header(--> 73) {}
 }
 
-enum ErrorField (:SeverityLocalized(83), :Severity(86), :ErrorCode(67), :Message(77), :Detail(68), :Hint(72), :Position(80), :InternalPosition(112), :InternalQuery(113), :Where(87), :SchemaName(115), :Table(116), :Column(99), :Datatype(100), :Constraint(110), :File(70), :Line(76), :Routine(82));
 multi map-type(ErrorField) { Enum[ErrorField, Int8] }
 
 class Packet::ErrorResponse does Packet::Base {
@@ -642,7 +661,7 @@ class PacketDecoder {
 		return Packet::Base if $!buffer.elems < 1 + $length;
 		my $payload = $!buffer.subbuf(0, 1 + $length);
 		$!buffer.subbuf-rw(0, 1 + $length) = Blob.new;
-		my &decoder = %!decoder-for{$payload[0]} or die 'Invalid message type ' ~ $payload.subbuf(0, 1).decode;
+		my &decoder = %!decoder-for{$payload[0]} or die X::Client.new('Invalid message type ' ~ $payload.subbuf(0, 1).decode);
 		decoder(Blob.new($payload));
 	}
 }
@@ -657,7 +676,7 @@ my role Protocol {
 role Authenticator {
 	proto method incoming-message(Packet::Authentication $packet, Promise $startup-promise, &send-message) { * }
 	multi method incoming-message(Packet::Authentication $packet, Promise $startup-promise, &send-message) {
-		$startup-promise.break('Can not authenticate');
+		$startup-promise.break(X::Client.new('Unknown authentication method'));
 		self;
 	}
 }
@@ -671,7 +690,7 @@ my class Authenticator::SCRAM does Authenticator {
 		try {
 			my $client-payload = $!scram.final-message($server-payload.decode).encode;
 			CATCH { default {
-				$startup-promise.break("Invalid server message: {.message}", )
+				$startup-promise.break(X::Client.new("Invalid server message: {.message}"));
 			}}
 			send-message(Packet::SASLResponse.new(:$client-payload));
 		}
@@ -680,7 +699,7 @@ my class Authenticator::SCRAM does Authenticator {
 	multi method incoming-message(Packet::AuthenticationSASLFinal $ (:$server-payload), Promise $startup-promise, &send-message) {
 		if not try $!scram.validate($server-payload.decode) {
 			my $reason = 'Could not validate final server message: ' ~ ($! // 'did not verify');
-			$startup-promise.break($reason);
+			$startup-promise.break(X::Client.new($reason));
 		}
 		self;
 	}
@@ -704,7 +723,7 @@ class Authenticator::Password does Authenticator {
 			my $password = 'md5' ~ $second-hash;
 			send-message(Packet::PasswordMessage.new(:$password));
 		} else {
-			$startup-promise.break('Could not load MD5 module');
+			$startup-promise.break(X::Client.new('Could not load MD5 module'));
 		}
 		self;
 	}
@@ -719,10 +738,10 @@ class Authenticator::Password does Authenticator {
 				send-message(Packet::SASLInitialResponse.new(:mechanism<SCRAM-SHA-256>, :$initial-response));
 				return Authenticator::SCRAM.new(:$scram);
 			} else {
-				$startup-promise.break('Could not load SCRAM module');
+				$startup-promise.break(X::Client.new('Could not load SCRAM module'));
 			}
 		} else {
-			$startup-promise.break("Client does not support SASL mechanisms: @mechanisms[]");
+			$startup-promise.break(X::Client.new("Client does not support SASL mechanisms: @mechanisms[]"));
 		}
 		self;
 	}
@@ -738,7 +757,7 @@ my class Protocol::Authenticating does Protocol {
 	}
 
 	method finished() { $!startup-promise.keep unless $!startup-promise }
-	method failed(%values) { $!startup-promise.break('Could not authenticate: ' ~ %values{Message}) }
+	method failed(%values) { $!startup-promise.break(X::Server.new('Could not authenticate', %values)) }
 }
 
 multi encode-string(Str:D $str) {$str.encode }
@@ -886,7 +905,7 @@ my class Protocol::ExtendedQuery does Protocol {
 	}
 	method failed(%values) {
 		$!source.done with $!source;
-		$!result.break("Could not $!stage.value(): %values{Message}");
+		$!result.break(X::Server.new("Could not $!stage.value()", %values));
 	}
 }
 
@@ -898,8 +917,8 @@ class PreparedStatement {
 	has Int:D $.expected-args is required;
 	has Bool $!closed = False;
 	method execute(*@args) {
-		die 'Prepared statement already closed' if $!closed;
-		die "Wrong number or arguments, got {+@args} expected $!expected-args" if @args != $!expected-args;
+		die X::Client.new('Prepared statement already closed') if $!closed;
+		die X::Client.new("Wrong number or arguments, got {+@args} expected $!expected-args") if @args != $!expected-args;
 		$!client.execute-prepared(self, @args);
 	}
 	method close(--> Promise) {
@@ -927,7 +946,7 @@ my class Protocol::Prepare does Protocol {
 		$!result.keep(PreparedStatement.new(:$!name, :$!client, :$!expected-args));
 	}
 	method failed(%values) {
-		$!result.break("Could not prepare: %values{Message}");
+		$!result.break(X::Server.new('Could not prepare', %values));
 	}
 }
 
@@ -939,7 +958,7 @@ my class Protocol::Close does Protocol {
 		$!result.keep unless $!result;
 	}
 	method failed(%values) {
-		$!result.break(X::Server.new("Could not close prepared statement", %values));
+		$!result.break(X::Server.new('Could not close prepared statement', %values));
 	}
 }
 
@@ -1008,7 +1027,7 @@ class Client {
 	multi method incoming-message(Packet::AuthenticationOk $) {
 	}
 	multi method incoming-message(Packet::NegotiateProtocolVersion $ (:$newest-minor-version)) {
-		$!startup-promise.break('Unsupported protocol version ' ~ $newest-minor-version);
+		$!startup-promise.break(X::Client.new('Unsupported protocol version ' ~ $newest-minor-version));
 	}
 	multi method incoming-message(Packet::BackendKeyData $ (:$process-id, :$secret-key)) {
 		$!process-id = $process-id;
@@ -1036,7 +1055,7 @@ class Client {
 	}
 
 	method startup(Str:D $user!, Str $database, Str $password --> Promise) {
-		die 'Already started' if $!startup-promise or $!protocol;
+		die X::Client.new('Already started') if $!startup-promise or $!protocol;
 		my $authenticator = $password.defined ?? Authenticator::Password.new(:$user, :$password) !! Authenticator::Null.new;
 		my %parameters = :$user;
 		%parameters<database> = $database with $database;
