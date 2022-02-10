@@ -1110,43 +1110,150 @@ class Client {
 
 =begin pod
 
-=head1 NAME
+=head1 Name
 
 Protocol::Postgres - a sans-io postgresql client
 
-=head1 SYNOPSIS
+=head1 Synopsis
 
 =begin code :lang<raku>
 
+use v6.d;
 use Protocol::Postgres;
 
 my $socket = await IO::Socket::Async.connect($host, $port);
 my $client = Protocol::Postgres::Client.new;
+$socket.Supply(:bin).act({ $client.incoming-data($^data) });
+$client.outbound-data.act({ $socket.write($^data) });
 
+await $client.startup($user, $database, $password);
+
+my $resultset = await $client.query('SELECT * FROM foo WHERE id = $1', 42);
 react {
-	whenever $client.startup($user, $database, $password) {
-		# Start some queries
-	}
-	whenever $client.outbound-data {
-		$socket.write($^packet);
-	}
-	whenever $socket.Supply(:bin) -> $data {
-		$client.incoming-data($data);
-		LAST done;
+	whenever $resultset.hash-rows -> (:$name, :$description) {
+		say "$name is $description";
 	}
 }
 
 =end code
 
-=head1 DESCRIPTION
+=head1 Description
 
-Protocol::Postgres is sans-io implementation of the (client side of) the postgresql protocol.
+Protocol::Postgres is sans-io implementation of (the client side of) the postgresql protocol. It is typically used through the C<Protocol::Postgres::Client> class.
 
-=head1 AUTHOR
+=head1 Client
+
+C<Protocol::Postgres::Client> has the following methods
+
+=head2 new(--> Protocol::Postgres::Client)
+
+This creates a new postgres client.
+
+=head2 outgoing-data(--> Supply)
+
+This returns a C<Supply> of C<Blob>s to be written to the server.
+
+=head2 incoming-data(Blob --> Nil)
+
+This consumes bytes received from the server.
+
+=head2 startup($user, $database?, $password? --> Promise)
+
+This starts the handshake to the server. C<$database> may be left undefined, the server will use C<$user> as database name. If a C<$password> is defined, any of clearnext, md5 or SCRAM-SHA-256 based authentication is supported.
+
+The resulting promise will finish when the connection is ready for queries.
+
+=head2 query($query, @bind-values --> Promise[ResultSet])
+
+This will issue a query with the given bind values, and return a promise to the result.
+
+=head2 query-multiple($query --> Supply[ResultSet])
+
+This will issue a complex query that may contain multiple statements, but can not use bind values. It will return a C<Supply> to the results of each query.
+
+=head2 prepare($query --> Promise[PreparedStatement])
+
+This prepares the query, and returns a Promise to the PreparedStatement object.
+
+=head2 startTls(--> Blob)
+
+This will return the marker that should be written to the server to start upgrading the connection to use TLS. If the server responds with a single C<S> byte the proposal is accepted and the client is expected to initiate the TLS handshake. If the server responds with an C<N> it is rejected, and the connection proceeds in cleartext.
+
+=head2 terminate(--> Nil)
+
+This sends a message to the server to terminate the connection
+
+=head2 notifications(--> Supply[Notification])
+
+This returns a supply with all notifications that the current connection is subscribed to. Channels can be subscribed using the C<LISTEN> command, and messages can be sent using the C<NOTIFY> command.
+
+=head2 process-id(--> Int)
+
+This returns the process id of the backend of this connection. This is useful for debugging purposes and for notifications.
+
+=head2 get-parameter(Str $name --> Str)
+
+This returns various parameters, currently known parameters are: C<server_version>, C<server_encoding>, C<client_encoding>, C<application_name>, C<default_transaction_read_only>, C<in_hot_standby>, C<is_superuser>, C<session_authorization>, C<DateStyle>, C<IntervalStyle>, C<TimeZone>, C<integer_datetimes>, and C<standard_conforming_strings>.
+
+=head1 ResultSet
+
+A C<Protocol::Postgres::ResultSet> represents the results of a query, if any.
+
+=head2 columns(--> List)
+
+This returns the column names for this resultset.
+
+=head2 rows(--> Supply[List])
+
+This returns a Supply of rows. Each row is a list of values.
+
+=head2 hash-rows(--> Supply[Hash])
+
+This returns a Supply of rows. Each row is a hash with the column names as keys and the row values as values.
+
+=head1 PreparedStatement
+
+A C<Protocol::Postgres::PreparedStatement> represents a prepated statement. It's reason of existence is to call C<execute> on it.
+
+=head2 execute(@arguments --> Promise[ResultSet])
+
+This runs the prepared statement, much like the C<query> method would have done.
+
+=head2 close()
+
+This closes the prepared statement.
+
+=head1 Notification
+
+C<Protocol::Postgres::Notification> has the following methods:
+
+=head2 sender(--> Int)
+
+This is the process-id of the sender
+
+=head2 channel(--> Str)
+
+This is the name of the channel that the notification was sent on
+
+=head2 payload(--> Str)
+
+This is the payload of the notification
+
+=head1 Todo
+
+=item1 Implement the copy protocol
+
+=begin item1
+Implement smart type conversions
+
+Postgres has a type system, much of that could be mapped to Raku types.
+=end item1
+
+=head1 Author
 
 Leon Timmermans <fawaka@gmail.com>
 
-=head1 COPYRIGHT AND LICENSE
+=head1 Copyright and License
 
 Copyright 2022 Leon Timmermans
 
