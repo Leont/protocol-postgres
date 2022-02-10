@@ -45,31 +45,42 @@ class DecodeBuffer {
 	has Blob:D $.buffer is required;
 	has Int $!pos = 0;
 
+	method !assert-more-bytes(Int $count) {
+		die X::Client.new('Incomplete packet') if $!pos + $count > $!buffer.elems;
+	}
+
 	method read-int32() {
+		self!assert-more-bytes(4);
 		my $result = $!buffer.read-int32($!pos, BigEndian);
 		$!pos += 4;
 		$result;
 	}
 	method read-int16() {
+		self!assert-more-bytes(2);
 		my $result = $!buffer.read-int16($!pos, BigEndian);
 		$!pos += 2;
 		$result;
 	}
 	method read-int8() {
+		self!assert-more-bytes(1);
 		my $result = $!buffer.read-int8($!pos++);
 		$result;
 	}
 	method peek-int8() {
+		self!assert-more-bytes(1);
 		$!buffer.read-uint8($!pos);
 	}
 	method read-string() {
-		my $end = $!pos;
-		$end++ while $!buffer[$end] != 0;
-		my $result = $!buffer.subbuf($!pos, $end - $!pos);
-		$!pos = $end + 1;
+		my $current = $!pos;
+		my $end = $!buffer.elems;
+		$current++ while $current < $end and $!buffer[$current] != 0;
+		die X::Client.new('Incomplete packet') if $current == $end;
+		my $result = $!buffer.subbuf($!pos, $current - $!pos);
+		$!pos = $current + 1;
 		$result.decode;
 	}
 	method read-buffer(Int $length) {
+		self!assert-more-bytes($length);
 		my $result = $!buffer.subbuf($!pos, $length);
 		$!pos += $length;
 		$result;
