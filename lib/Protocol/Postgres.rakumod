@@ -850,8 +850,8 @@ class ResultSet {
 		method add-row(@row) {
 			$!rows.emit($!encoder.decode(@row).eager);
 		}
-		method resultset() {
-			ResultSet.new(:@!columns, :rows($!rows.Supply));
+		method resultset(ResultSet:U $resultset) {
+			$resultset.new(:@!columns, :rows($!rows.Supply));
 		}
 	}
 }
@@ -859,17 +859,18 @@ class ResultSet {
 my class Protocol::Query does Protocol {
 	has ResultSet::Source $!source;
 	has Supplier:D $.supplier handles(:finished<done>) is required;
+	has ResultSet:U $.resultset is required;
 
 	multi method incoming-message(Packet::RowDescription $ (:@fields)) {
 		$!source = ResultSet::Source.new(@fields);
-		$!supplier.emit($!source.resultset);
+		$!supplier.emit($!source.resultset(:$!resultset));
 	}
 	multi method incoming-message(Packet::DataRow $ (:@values)) {
 		$!source.add-row(@values);
 	}
 	multi method incoming-message(Packet::EmptyQueryResponse $) {
 		$!source = ResultSet::Source.new;
-		$!supplier.emit($!source.resultset);
+		$!supplier.emit($!source.resultset(:$!resultset));
 	}
 	multi method incoming-message(Packet::CommandComplete $) {
 		$!source.done with $!source;
@@ -886,6 +887,7 @@ my class Protocol::ExtendedQuery does Protocol {
 	has Promise:D $.result is required;
 	has ResultSet::Source $!source;
 	has Stage:D $.stage = Parsing;
+	has ResultSet:U $.resultset is required;
 	multi method incoming-message(Packet::ParseComplete $) {
 		$!stage = Binding;
 	}
@@ -895,12 +897,12 @@ my class Protocol::ExtendedQuery does Protocol {
 	multi method incoming-message(Packet::RowDescription $ (:@fields)) {
 		$!stage = Executing;
 		$!source = ResultSet::Source.new(@fields);
-		$!result.keep($!source.resultset);
+		$!result.keep($!source.resultset($!resultset));
 	}
 	multi method incoming-message(Packet::NoData $) {
 		$!stage = Executing;
 		$!source = ResultSet::Source.new;
-		$!result.keep($!source.resultset);
+		$!result.keep($!source.resultset($!resultset));
 	}
 	multi method incoming-message(Packet::DataRow $ (:@values)) {
 		$!source.add-row(@values);
@@ -930,15 +932,16 @@ class PreparedStatement {
 	has Client:D $.client is required;
 	has Str:D $.name is required;
 	has Int:D $.expected-args is required;
+	has ResultSet:U $.resultset is required;
 	has Bool $!closed = False;
 	method execute(*@args) {
 		die X::Client.new('Prepared statement already closed') if $!closed;
 		die X::Client.new("Wrong number or arguments, got {+@args} expected $!expected-args") if @args != $!expected-args;
-		$!client.execute-prepared(self, @args);
+		$!client.execute-prepared(self, @args, :$!resultset);
 	}
 	method close(--> Promise) {
 		$!closed = True;
-		$!client.close-prepared($!name);
+		$!client.close-prepared(self);
 	}
 	method DESTROY() {
 		self.close unless $!closed;
@@ -949,6 +952,7 @@ my class Protocol::Prepare does Protocol {
 	has Client:D $.client is required;
 	has Str:D $.name is required;
 	has Promise:D $.result is required;
+	has ResultSet:U $.resultset is required;
 	has Int $!expected-args;
 	multi method incoming-message(Packet::ParseComplete $) {
 	}
@@ -958,7 +962,7 @@ my class Protocol::Prepare does Protocol {
 		$!expected-args = +@types;
 	}
 	method finished() {
-		$!result.keep(PreparedStatement.new(:$!name, :$!client, :$!expected-args));
+		$!result.keep(PreparedStatement.new(:$!name, :$!client, :$!expected-args, :$!resultset));
 	}
 	method failed(%values) {
 		$!result.break(X::Server.new('Could not prepare', %values));
@@ -1080,9 +1084,9 @@ class Client {
 		$!startup-promise;
 	}
 
-	method query-multiple(Str $query --> Supply) {
+	method query-multiple(Str $query, ResultSet:U :$resultset --> Supply) {
 		my $supplier = Supplier::Preserving.new;
-		self!submit(Protocol::Query.new(:$supplier), [ Packet::Query.new(:$query) ]);
+		self!submit(Protocol::Query.new(:$supplier, :$resultset), [ Packet::Query.new(:$query) ]);
 		$supplier.Supply;
 	}
 
@@ -1097,9 +1101,9 @@ class Client {
 		}
 	}
 
-	method query(Str $query, *@values --> Promise) {
+	method query(Str $query, *@values, ResultSet:U :$resultset --> Promise) {
 		my $result = Promise.new;
-		my $protocol = Protocol::ExtendedQuery.new(:$result);
+		my $protocol = Protocol::ExtendedQuery.new(:$result, :$resultset);
 		my $encoding = fieldencoding-for-values(@values);
 		self!submit($protocol, [
 			Packet::Parse.new(:$query),
@@ -1109,19 +1113,20 @@ class Client {
 		$result;
 	}
 
-	method prepare(Str $query, Str :$name = "prepared-{++$!prepare-counter}" --> Promise) {
+	method prepare(Str $query, Str :$name = "prepared-{++$!prepare-counter}", ResultSet:U :$resultset --> Promise) {
 		my $result = Promise.new;
-		my $protocol = Protocol::Prepare.new(:client(self), :$name, :$result);
+		my $protocol = Protocol::Prepare.new(:client(self), :$name, :$result, :$resultset);
 		self!submit($protocol, [
 			Packet::Parse.new(:$query, :$name), Packet::Describe.new(:$name, :type(Prepared)), Packet::Sync.new,
 		]);
 		$result;
 	}
 
-	method execute-prepared(PreparedStatement $prepared, @values) {
+	method execute-prepared(PreparedStatement $prepared, @values --> Promise) {
 		my $result = Promise.new;
+		my $resultset = $prepared.resultset;
+		my $protocol = Protocol::ExtendedQuery.new(:$result, :stage(Binding), :$resultset);
 		my $encoding = fieldencoding-for-values(@values);
-		my $protocol = Protocol::ExtendedQuery.new(:$result, :stage(Binding));
 		self!submit($protocol, [
 			Packet::Bind.new(:name($prepared.name), :formats($encoding.formats), :fields($encoding.encode(@values))),
 			Packet::Describe.new, Packet::Execute.new, Packet::Close.new(:type(Portal)), Packet::Sync.new
