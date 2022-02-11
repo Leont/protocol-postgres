@@ -775,53 +775,104 @@ my class Protocol::Authenticating does Protocol {
 	method failed(%values) { $!startup-promise.break(X::Server.new('Could not authenticate', %values)) }
 }
 
-multi encode-string(Str:D $str) {$str.encode }
-multi encode-string(Str:U $str) { Blob }
-multi decode-string(Blob:D $buf) { $buf.decode }
-multi decode-string(Blob:U $buf) { Str }
+role Type[Int:D $oid, Any:U $type] {
+	method oid(--> Int) { $oid }
+	method type-object() { $type }
+	method format() { Text }
 
-role FieldEncoding {
-	method formats() { ... }
-	method encode(@values) { ... }
-	method decode(@values) { ... }
+	method encode-to-text(Any:D $value) { ... }
+	multi method encode(Text, Any:D $value) { self.encode-to-text($value).encode }
+	multi method encode(Format, Any:U $value) { Blob }
+	method decode-from-text(Str $string) { ... }
+	multi method decode(Text, Blob:D $blob) { self.decode-from-text($blob.decode) }
+	multi method decode(Format, Blob:U $blob) { self.type-object }
+}
+sub type-encode(Type $type, Any $value) {
+	$type.encode($type.format, $value);
 }
 
-class FieldEncoding::AllText does FieldEncoding {
-	method formats() { () }
-	method encode(@values) {
-		@values.map(&encode-string);
-	}
-	method decode(@values) {
-		@values.map(&decode-string);
-	}
+class Type::Bool does Type[16, Bool] {
+	method encode-to-text(Bool(Any:D) $input) { $input ?? 't' !! 'f' }
+	method decode-from-text(Str:D $string --> Bool) { $string eq 't' }
 }
 
-class FieldEncoding::AllBinary does FieldEncoding  {
-	method formats() { (Binary) }
-	method encode(@values) {
-		@values;
+class Type::Blob does Type[17, Blob] {
+	method format() { Binary }
+	multi method encode(Binary, Blob $input) { $input }
+	method encode-to-text(Blob $value) {
+		Q{\x} ~ $value.decode('latin1').subst(/./, { .ord.fmt('%02x') }, :g);
 	}
-	method decode(@values) {
-		@values;
-	}
-}
-
-class FieldEncoding::Variant does FieldEncoding {
-	has Format @.formats;
-	method encode(@values) {
-		(@!formats Z @values).map: -> ($format, $value) {
-			$format === Text ?? encode-string($value) !! $value;
+	multi method decode(Binary, Blob $input) { $input }
+	multi method decode-from-text(Str $string) {
+		if $string.starts-with(Q{\x}) {
+			$string.substr(2).subst(/<xdigit>**2/, { :16(~$_).chr }, :g).encode('latin1');
+		} else {
+			$string.subst(q{''}, q{'}, :g).subst(Q{\\}, Q{\}, :g).subst(/ \\ (<[0..7]> ** 3) /, -> $/ { :8(~$1).chr }, :g).encode('latin1');
 		}
 	}
-	method decode(@values) {
-		(@!formats Z @values).map: -> ($format, $value) {
-			$format === Text ?? decode-string($value) !! $value;
-		}
-	}
+}
+
+class Type::Int does Type[20, Int] {
+	method encode-to-text(Int(Cool:D) $int) { ~$int }
+	method decode-from-text(Str:D $string --> Int) { $string.Int }
+}
+
+class Type::Num does Type[701, Num] {
+	method encode-to-text(Num(Cool:D) $num) { ~$num }
+	method decode-from-text(Str:D $string --> Num) { $string.Num }
+}
+
+class Type::Rat does Type[1700, Rat] {
+	method encode-to-text(Rat(Cool:D) $rat) { ~$rat }
+	method decode-from-text(Str:D $string --> Rat) { $string.Rat }
+}
+
+class Type::Date does Type[1182, Date] {
+	method encode-to-text(Date(Any:D) $date) { ~$date }
+	method decode-from-text(Str:D $string --> Date) { $string.Date }
+}
+
+class Type::DateTime does Type[1184, DateTime] {
+	my sub to-datetime(Str $string --> DateTime) { $string.subst(' ', 'T').DateTime }
+	multi method encode-to-text(DateTime:D $datetime) { ~$datetime }
+	multi method encode-to-text(Date:D $datetime) { ~$datetime.DateTime }
+	multi method encode-to-text(Str:D $input) { ~to-datetime($input) }
+	method decode-from-text(Str:D $string --> DateTime) { to-datetime($string) }
+}
+
+class Type::Default does Type[0, Str] {
+	method encode-to-text(Str(Any:D) $input) { $input }
+	method decode-from-text(Str:D $input) { $input }
+}
+
+role TypeMap {
+	method for-type(Any --> Type) { ... }
+	method for-oid(Int --> Type) { ... }
+}
+
+class TypeMap::Simple does TypeMap {
+	multi method for-type(Cool) { Type::Default }
+	multi method for-type(Blob) { Type::Blob }
+	multi method for-type(Bool) { Type::Bool }
+	multi method for-type(Int) { Type::Int }
+	multi method for-type(Num) { Type::Num }
+	multi method for-type(DateTime) { Type::DateTime }
+	multi method for-type(Date) { Type::Date }
+	multi method for-type(Rat) { Type::Rat }
+
+	multi method for-oid(Int) { Type::Default }
+	multi method for-oid(16) { Type::Bool }
+	multi method for-oid(17) { Type::Blob }
+	multi method for-oid(Int $ where 20|21|23|26) { Type::Int }
+	multi method for-oid(Int $ where 700|701) { Type::Num }
+	multi method for-oid(1082) { Type::Date }
+	multi method for-oid(Int $ where 1114|1184) { Type::DateTime }
+	multi method for-oid(1700) { Type::Rat }
 }
 
 class ResultSet {
 	has Str @.columns is required;
+	has Any:U @.types is required;
 	has Supply $.rows is required;
 
 	method hash-rows() {
@@ -829,47 +880,50 @@ class ResultSet {
 	}
 
 	class Source {
-		has FieldEncoding $.encoder is required;
-		has Str @.columns is required;
-		has Supplier:D $!rows handles<done> = Supplier::Preserving.new;
-		multi fieldencoding-for(Format @formats) {
-			if @formats eqv Array[Format].new|Array[Format].new(Text) {
-				FieldEncoding::AllText;
-			} elsif @formats eqv Array[Format].new(Binary) {
-				FieldEncoding::AllBinary;
-			} else {
-				FieldEncoding::Variant.new(:@formats);
+		my class Column {
+			has Str:D $.name is required;
+			has Format:D $.format is required;
+			has Type $.type is required;
+			method new(FieldDescription:D $field, TypeMap $typemap) {
+				my $type = $typemap.for-oid($field.type);
+				self.bless(:name($field.name), :format($field.format), :$type);
 			}
 		}
-		method new(FieldDescription @fields?) {
-			my Format @formats = @fields».format;
-			my $encoder = fieldencoding-for(@formats);
-			my @columns = @fields».name;
-			self.bless(:$encoder, :@columns);
+		my sub decode(Column $column, Blob $value) {
+			$column.type.decode($column.format, $value).self;
+		}
+		has Column @.columns is required;
+		has Supplier:D $!rows handles<done> = Supplier::Preserving.new;
+		method new(TypeMap $typemap, FieldDescription @fields?) {
+			my @columns = @fields.map: { Column.new($^field, $typemap) };
+			self.bless(:@columns);
 		}
 		method add-row(@row) {
-			$!rows.emit($!encoder.decode(@row).eager);
+			$!rows.emit(eager @!columns Z[&decode] @row);
 		}
 		method resultset(ResultSet:U $resultset) {
-			$resultset.new(:@!columns, :rows($!rows.Supply));
+			my @columns = @!columns».name;
+			my @types   = @!columns».type;
+			$resultset.new(:@columns, :@types, :rows($!rows.Supply));
 		}
 	}
 }
 
 my class Protocol::Query does Protocol {
+	has TypeMap $.typemap is required;
 	has ResultSet::Source $!source;
 	has Supplier:D $.supplier handles(:finished<done>) is required;
 	has ResultSet:U $.resultset is required;
 
 	multi method incoming-message(Packet::RowDescription $ (:@fields)) {
-		$!source = ResultSet::Source.new(@fields);
+		$!source = ResultSet::Source.new($!typemap, @fields);
 		$!supplier.emit($!source.resultset(:$!resultset));
 	}
 	multi method incoming-message(Packet::DataRow $ (:@values)) {
 		$!source.add-row(@values);
 	}
 	multi method incoming-message(Packet::EmptyQueryResponse $) {
-		$!source = ResultSet::Source.new;
+		$!source = ResultSet::Source.new($!typemap);
 		$!supplier.emit($!source.resultset(:$!resultset));
 	}
 	multi method incoming-message(Packet::CommandComplete $) {
@@ -885,6 +939,7 @@ my enum Stage (:Parsing<parse>, :Binding<bind>, :Describing<describe>, :Executin
 
 my class Protocol::ExtendedQuery does Protocol {
 	has Promise:D $.result is required;
+	has TypeMap $.typemap is required;
 	has ResultSet::Source $!source;
 	has Stage:D $.stage = Parsing;
 	has ResultSet:U $.resultset is required;
@@ -896,12 +951,12 @@ my class Protocol::ExtendedQuery does Protocol {
 	}
 	multi method incoming-message(Packet::RowDescription $ (:@fields)) {
 		$!stage = Executing;
-		$!source = ResultSet::Source.new(@fields);
+		$!source = ResultSet::Source.new($!typemap, @fields);
 		$!result.keep($!source.resultset($!resultset));
 	}
 	multi method incoming-message(Packet::NoData $) {
 		$!stage = Executing;
-		$!source = ResultSet::Source.new;
+		$!source = ResultSet::Source.new($!typemap);
 		$!result.keep($!source.resultset($!resultset));
 	}
 	multi method incoming-message(Packet::DataRow $ (:@values)) {
@@ -931,13 +986,13 @@ class Client { ... }
 class PreparedStatement {
 	has Client:D $.client is required;
 	has Str:D $.name is required;
-	has Int:D $.expected-args is required;
+	has Type @.types is required;
 	has Bool $!closed = False;
-	method resultset-class() { ResultSet }
-	method execute(*@args) {
+	method resultset() { ResultSet }
+	method execute(*@values, :@output-types) {
 		die X::Client.new('Prepared statement already closed') if $!closed;
-		die X::Client.new("Wrong number or arguments, got {+@args} expected $!expected-args") if @args != $!expected-args;
-		$!client.execute-prepared(self, @args, :resultset(self.resultset));
+		die X::Client.new("Wrong number or arguments, got {+@values} expected {+@!types}") if @values != @!types;
+		$!client.execute-prepared(self, @values, :@output-types, :resultset(self.resultset));
 	}
 	method close(--> Promise) {
 		$!closed = True;
@@ -953,16 +1008,17 @@ my class Protocol::Prepare does Protocol {
 	has Str:D $.name is required;
 	has Promise:D $.result is required;
 	has PreparedStatement:U $.prepared-statement is required;
-	has Int $!expected-args;
+	has Type @!types;
+
 	multi method incoming-message(Packet::ParseComplete $) {
 	}
 	multi method incoming-message(Packet::RowDescription $ (:@fields)) {
 	}
 	multi method incoming-message(Packet::ParameterDescription $ (:@types)) {
-		$!expected-args = +@types;
+		@!types = @types.map({ $!client.typemap.for-oid($^type) });
 	}
 	method finished() {
-		$!result.keep($!prepared-statement.new(:$!name, :$!client, :$!expected-args));
+		$!result.keep($!prepared-statement.new(:$!name, :$!client, :@!types));
 	}
 	method failed(%values) {
 		$!result.break(X::Server.new('Could not prepare', %values));
@@ -995,6 +1051,7 @@ class Client {
 	has Supplier $!notifications handles(:notifications<Supply>) = Supplier.new;
 	has PacketDecoder $!decoder = PacketDecoder.new;
 	has Int $!prepare-counter = 0;
+	has TypeMap $.typemap = TypeMap::Simple;
 
 	has Int $!process-id handles(:process-id<self>);
 	has Int $!secret-key;
@@ -1090,45 +1147,63 @@ class Client {
 		$supplier.Supply;
 	}
 
-	sub fieldencoding-for-values(@values) {
-		if all(@values) ~~ Str {
-			FieldEncoding::AllText;
-		} elsif all(@values) ~~ Blob {
-			FieldEncoding::AllBinary;
+	sub compress-formats(@formats) {
+		if all(@formats) === Text {
+			();
+		} elsif all(@formats) === Binary {
+			(Binary);
 		} else {
-			my @formats = @values.map({ $^value ~~ Blob ?? Binary !! Text });
-			FieldEncoding::Variant.new(:@formats);
+			@formats;
 		}
 	}
 
-	method query(Str $query, *@values, ResultSet:U :$resultset --> Promise) {
+	sub compress-oids(@oids) {
+		all(@oids) == 0 ?? () !! @oids;
+	}
+
+	method query(Str $query, *@values, :@output-types, ResultSet:U :$resultset --> Promise) {
 		my $result = Promise.new;
-		my $protocol = Protocol::ExtendedQuery.new(:$result, :$resultset);
-		my $encoding = fieldencoding-for-values(@values);
+		my $protocol = Protocol::ExtendedQuery.new(:$result, :$!typemap, :$resultset);
+
+		my @types = @values.map: { $!typemap.for-type($^value) };
+		my @oids = compress-oids(@types».oid);
+		my @formats = compress-formats(@types».format);
+		my @fields = @types Z[&type-encode] @values;
+
+		my @outputs = @output-types.map: { $!typemap.for-type($^value) };
+		my @result-formats = compress-formats(@outputs».format);
+
 		self!submit($protocol, [
-			Packet::Parse.new(:$query),
-			Packet::Bind.new(:formats($encoding.formats), :fields($encoding.encode(@values))),
+			Packet::Parse.new(:$query, :@oids), Packet::Bind.new(:@formats, :@fields),
 			Packet::Describe.new, Packet::Execute.new, Packet::Close.new(:type(Prepared)), Packet::Sync.new,
 		]);
 		$result;
 	}
 
-	method prepare(Str $query, Str :$name = "prepared-{++$!prepare-counter}", PreparedStatement:U :$prepared-statement --> Promise) {
+	method prepare(Str $query, Str :$name = "prepared-{++$!prepare-counter}", :@input-types, PreparedStatement:U :$prepared-statement --> Promise) {
 		my $result = Promise.new;
+		my @types = @input-types.map: { $!typemap.for-type($^value) };
+		my @oids = compress-oids(@types».oid);
 		my $protocol = Protocol::Prepare.new(:client(self), :$name, :$result, :$prepared-statement);
 		self!submit($protocol, [
-			Packet::Parse.new(:$query, :$name), Packet::Describe.new(:$name, :type(Prepared)), Packet::Sync.new,
+			Packet::Parse.new(:$query, :$name, :@oids), Packet::Describe.new(:$name, :type(Prepared)), Packet::Sync.new,
 		]);
 		$result;
 	}
 
-	method execute-prepared(PreparedStatement $prepared, @values --> Promise) {
+	method execute-prepared(PreparedStatement $prepared, @values, :@output-types --> Promise) {
 		my $result = Promise.new;
-		my $resultset = $prepared.resultset;
-		my $protocol = Protocol::ExtendedQuery.new(:$result, :stage(Binding), :$resultset);
-		my $encoding = fieldencoding-for-values(@values);
+		my $protocol = Protocol::ExtendedQuery.new(:$result, :$!typemap, :stage(Binding), :resultset($prepared.resultset));
+
+		my @types = $prepared.types;
+		my @formats = compress-formats(@types».format);
+		my @fields = @types Z[&type-encode] @values;
+
+		my @outputs = @output-types.map: { $!typemap.for-type($^value) };
+		my @result-formats = compress-formats(@outputs».format);
+
 		self!submit($protocol, [
-			Packet::Bind.new(:name($prepared.name), :formats($encoding.formats), :fields($encoding.encode(@values))),
+			Packet::Bind.new(:name($prepared.name), :@formats, :@fields, :@result-formats),
 			Packet::Describe.new, Packet::Execute.new, Packet::Close.new(:type(Portal)), Packet::Sync.new
 		]);
 		$result;
@@ -1186,7 +1261,13 @@ C<Protocol::Postgres::Client> has the following methods
 
 =head2 new(--> Protocol::Postgres::Client)
 
-This creates a new postgres client.
+This creates a new postgres client. It supports one optional named argument:
+
+=begin item1
+TypeMap :$typemap = TypeMap::Simple
+
+This is the typemap that is used to translate between Raku's and Postgres' typesystem. The default mapping supports common built-in types such as strings, numbers, bools, dates, datetimes and blobs.
+=end item1
 
 =head2 outgoing-data(--> Supply)
 
@@ -1204,7 +1285,7 @@ The resulting promise will finish when the connection is ready for queries.
 
 =head2 query($query, @bind-values --> Promise[ResultSet])
 
-This will issue a query with the given bind values, and return a promise to the result.
+This will issue a query with the given bind values, and return a promise to the result. Both the input types and the output types will be typemapped between Raku types and Postgres types using the typemapper.
 
 =head2 query-multiple($query --> Supply[ResultSet])
 
@@ -1281,12 +1362,6 @@ This is the payload of the notification
 =head1 Todo
 
 =item1 Implement the copy protocol
-
-=begin item1
-Implement smart type conversions
-
-Postgres has a type system, much of that could be mapped to Raku types.
-=end item1
 
 =head1 Author
 
