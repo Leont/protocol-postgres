@@ -893,7 +893,7 @@ class ResultSet {
 			$column.type.decode($column.format, $value).self;
 		}
 		has Column @.columns is required;
-		has Supplier:D $!rows handles<done> = Supplier::Preserving.new;
+		has Supplier:D $!rows handles<done quit> = Supplier::Preserving.new;
 		method new(TypeMap $typemap, FieldDescription @fields?) {
 			my @columns = @fields.map: { Column.new($^field, $typemap) };
 			self.bless(:@columns);
@@ -976,8 +976,12 @@ my class Protocol::ExtendedQuery does Protocol {
 		$!stage = Syncing;
 	}
 	method failed(%values) {
-		$!source.done with $!source;
-		$!result.break(X::Server.new("Could not $!stage.value()", %values));
+		my $exception = X::Server.new("Could not $!stage.value()", %values);
+		if $!stage === Parsing|Binding|Describing {
+			$!result.break($exception);
+		} else {
+			$!source.quit($exception);
+		}
 	}
 }
 
