@@ -840,9 +840,68 @@ class Type::DateTime does Type[1184, DateTime] {
 	method decode-from-text(Str:D $string --> DateTime) { to-datetime($string) }
 }
 
+role Type::Array { ... }
+
+my sub quote-string(Str:D $string) {
+	'"' ~ $string.subst(Q{\}, Q{\\}, :g).subst(/\"/, '\\"', :g) ~ '"';
+}
+my sub encode-array($element, @values) {
+	if $element ~~ Type::Array|Type::Int|Type::Num|Type::Rat {
+		return '{' ~ @values.map({ $element.encode-to-text($^value) }).join(', ') ~ '}';
+	} else {
+		return '{' ~ @values.map({ quote-string($element.encode-to-text($^value)) }).join(', ') ~ '}';
+	}
+}
+
 class Type::Default does Type[0, Str] {
-	method encode-to-text(Str(Any:D) $input) { $input }
+	multi method encode-to-text(@input) is default { encode-array(Type::Default, @input) }
+	multi method encode-to-text(Str(Any:D) $input) { $input }
 	method decode-from-text(Str:D $input) { $input }
+}
+
+role Type::Array[::Element, Int $oid] does Type[0, Array] {
+	method oid(--> Int) { $oid }
+	method type-object() { Array[Element.type-object] }
+	my grammar ArrayParser {
+		rule TOP {
+			^ <array> $
+			{ make $<array>.made }
+		}
+		rule array {
+			'{' ~ '}' <element>* % ','
+			{ make eager $<element>».made }
+		}
+		rule element {
+			[ <value=array> | <value=string> | <value=quoted> | <value=null> ]
+			{ make $<value>.made }
+		}
+		token string {
+			<-[",{}\ ]>+
+			{ make Element.decode-from-text(~$/) }
+		}
+		token quoted {
+			'"' ~ '"' [ <str> | \\ <str=.escaped> ]*
+			{ make Element.decode-from-text($<str>».made.join) }
+		}
+		token str {
+			 <-["\\]>+
+			{ make ~$/ }
+		}
+		token escaped {
+			<["\\]>
+			{ make ~$/ }
+		}
+		token null {
+			'NULL'
+			{ make Element.type-object }
+		}
+	}
+	method encode-to-text(@values) {
+		encode-array(Element, @values);
+	}
+	method decode-from-text(Str $string) {
+		ArrayParser.parse($string).made;
+	}
 }
 
 role TypeMap {
@@ -859,6 +918,13 @@ class TypeMap::Simple does TypeMap {
 	multi method for-type(DateTime) { Type::DateTime }
 	multi method for-type(Date) { Type::Date }
 	multi method for-type(Rat) { Type::Rat }
+	multi method for-type(Array $array) { Type::Array[Type::Default, 1009] }
+	multi method for-type(Array[Bool] $array) { Type::Array[Type::Bool, 1000] }
+	multi method for-type(Array[Blob] $array) { Type::Array[Type::Blob, 1001] }
+	multi method for-type(Array[Int] $array) { Type::Array[Type::Int, 1016] }
+	multi method for-type(Array[Num] $array) { Type::Array[Type::Num, 1022] }
+	multi method for-type(Array[Date] $array) { Type::Array[Type::Date, 1082] }
+	multi method for-type(Array[DateTime] $array) { Type::Array[Type::DateTime, 1085] }
 
 	multi method for-oid(Int) { Type::Default }
 	multi method for-oid(16) { Type::Bool }
@@ -868,6 +934,14 @@ class TypeMap::Simple does TypeMap {
 	multi method for-oid(1082) { Type::Date }
 	multi method for-oid(Int $ where 1114|1184) { Type::DateTime }
 	multi method for-oid(1700) { Type::Rat }
+	multi method for-oid(1000) { Type::Array[Type::Bool, 1000] }
+	multi method for-oid(1001) { Type::Array[Type::Blob, 1001] }
+	multi method for-oid(Int $ where 1002|1003|1009|1014|1015) { Type::Array[Type::Default, 1009] }
+	multi method for-oid(Int $ where 1005|1007|1016|1028) { Type::Array[Type::Int, 1016] }
+	multi method for-oid(Int $ where 1021|1022) { Type::Array[Type::Num, 1022] }
+	multi method for-oid(1182) { Type::Array[Type::Date, 1182] }
+	multi method for-oid(Int $ where 1115|1185) { Type::Array[Type::DateTime, 1185] }
+	multi method for-oid(1231) { Type::Array[Type::Rat, 1231] }
 }
 
 class ResultSet {
@@ -993,7 +1067,7 @@ class PreparedStatement {
 	has Type @.types is required;
 	has Bool $!closed = False;
 	method resultset() { ResultSet }
-	method execute(*@values, :@output-types) {
+	method execute(**@values, :@output-types) {
 		die X::Client.new('Prepared statement already closed') if $!closed;
 		die X::Client.new("Wrong number or arguments, got {+@values} expected {+@!types}") if @values != @!types;
 		$!client.execute-prepared(self, @values, :@output-types, :resultset(self.resultset));
@@ -1165,7 +1239,7 @@ class Client {
 		all(@oids) == 0 ?? () !! @oids;
 	}
 
-	method query(Str $query, *@values, :@output-types, ResultSet:U :$resultset --> Promise) {
+	method query(Str $query, **@values, :@output-types, ResultSet:U :$resultset --> Promise) {
 		my $result = Promise.new;
 		my $protocol = Protocol::ExtendedQuery.new(:$result, :$!typemap, :$resultset);
 
