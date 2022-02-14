@@ -2,21 +2,23 @@ unit module Protocol::Postgres:ver<0.0.1>:auth<cpan:LEONT>;
 
 enum ErrorField (:SeverityLocalized(83), :Severity(86), :ErrorCode(67), :Message(77), :Detail(68), :Hint(72), :Position(80), :InternalPosition(112), :InternalQuery(113), :Where(87), :SchemaName(115), :Table(116), :Column(99), :Datatype(100), :Constraint(110), :File(70), :Line(76), :Routine(82));
 
-class X::Client is Exception {
-	has Str:D $.message is required;
-	method new(Str:D $message) {
-		self.bless(:$message);
+package X {
+	our class Client is Exception {
+		has Str:D $.message is required;
+		method new(Str:D $message) {
+			self.bless(:$message);
+		}
 	}
-}
 
-class X::Server is Exception {
-	has Str:D $.prefix is required;
-	has Str:D %.values{ErrorField} is required;
-	method new(Str:D $prefix, Hash[Str,ErrorField] $values) {
-		self.bless(:$prefix, :$values);
-	}
-	method message(--> Str) {
-		"$!prefix: %!values{Message}";
+	our class Server is Exception {
+		has Str:D $.prefix is required;
+		has Str:D %.values{ErrorField} is required;
+		method new(Str:D $prefix, Hash[Str,ErrorField] $values) {
+			self.bless(:$prefix, :$values);
+		}
+		method message(--> Str) {
+			"$!prefix: %!values{Message}";
+		}
 	}
 }
 

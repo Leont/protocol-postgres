@@ -1,6 +1,7 @@
 Revision history for Protocol-Postgres
 
 {{$NEXT}}
+    - Make Exceptions accessibly from outside the package
 
 0.0.1  2022-02-14T16:57:20+01:00
     - Initial version
