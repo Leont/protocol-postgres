@@ -22,11 +22,17 @@ for lines() {
 		say $client.get-parameter(~$<parameter>);
 	}
 	default {
-		my $resultset = await $client.query(~$_);
 		CATCH { default { say .message } }
-		react {
-			whenever $resultset.hash-rows -> $row {
-				dd $row;
+		given await $client.query(~$_) {
+			when Protocol::Postgres::ResultSet {
+				react {
+					whenever .hash-rows -> $row {
+						dd $row;
+					}
+				}
+			}
+			when Bool {
+				say "Succes.";
 			}
 		}
 	}

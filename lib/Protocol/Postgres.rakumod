@@ -1030,30 +1030,33 @@ my class Protocol::ExtendedQuery does Protocol {
 	}
 	multi method incoming-message(Packet::NoData $) {
 		$!stage = Executing;
-		$!source = ResultSet::Source.new($!typemap);
-		$!result.keep($!source.resultset($!resultset));
 	}
 	multi method incoming-message(Packet::DataRow $ (:@values)) {
 		$!source.add-row(@values);
 	}
 	multi method incoming-message(Packet::EmptyQueryResponse $) {
 		$!stage = Closing;
-		$!source.done;
-		$!source = Nil;
 	}
 	multi method incoming-message(Packet::CommandComplete $) {
 		$!stage = Closing;
-		$!source.done;
-		$!source = Nil;
+		if $!source {
+			$!source.done;
+			$!source = Nil;
+		} elsif not $!result {
+			$!result.keep;
+		}
 	}
 	multi method incoming-message(Packet::CloseComplete $) {
 		$!stage = Syncing;
 	}
+	method finish() {
+		$!result.keep unless $!result;
+	}
 	method failed(%values) {
 		my $exception = X::Server.new("Could not $!stage.value()", %values);
-		if $!stage === Parsing|Binding|Describing {
+		if not $!result {
 			$!result.break($exception);
-		} else {
+		} elsif $!source {
 			$!source.quit($exception);
 		}
 	}
@@ -1361,9 +1364,13 @@ This starts the handshake to the server. C<$database> may be left undefined, the
 
 The resulting promise will finish when the connection is ready for queries.
 
-=head2 query($query, @bind-values --> Promise[ResultSet])
+=head2 query($query, @bind-values --> Promise)
 
-This will issue a query with the given bind values, and return a promise to the result. Both the input types and the output types will be typemapped between Raku types and Postgres types using the typemapper.
+This will issue a query with the given bind values, and return a promise to the result.
+
+For fetching queries such as C<SELECT> the result will be a C<ResultSet> object, for manipulation (e.g. C<INSERT>) and definition (e.g. C<CREATE>) queries it will result in the value C<True>.
+
+Both the input types and the output types will be typemapped between Raku types and Postgres types using the typemapper.
 
 =head2 query-multiple($query --> Supply[ResultSet])
 
