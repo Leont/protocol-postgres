@@ -1418,7 +1418,7 @@ This returns a Supply of rows. Each row is a hash with the column names as keys 
 
 =head1 PreparedStatement
 
-A C<Protocol::Postgres::PreparedStatement> represents a prepated statement. It's reason of existence is to call C<execute> on it.
+A C<Protocol::Postgres::PreparedStatement> represents a prepated statement. Its reason of existence is to call C<execute> on it.
 
 =head2 execute(@arguments --> Promise[ResultSet])
 
