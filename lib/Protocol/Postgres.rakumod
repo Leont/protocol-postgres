@@ -295,6 +295,30 @@ role Object[Any:U $outer] does Serializable {
 	}
 }
 
+multi map-type(ErrorField) { Enum[ErrorField, Int8] }
+
+enum Format <Text Binary>;
+multi map-type(Format) { Enum[Format, Int16] }
+
+enum RequestType (:Prepared(83), :Portal(80));
+multi map-type(RequestType) { Enum[RequestType, Int8] }
+
+enum QueryStatus (:Idle(73), :Transaction(84), :Error(69));
+multi map-type(QueryStatus) { Enum[QueryStatus, Int8] }
+
+class FieldDescription {
+	my $schema = Schema.new((:name(Str), :table(Int32), :column(Int16), :type(Int32), :size(Int16), :modifier(Int32), :format(Format)));
+	method schema() { $schema }
+	has Str:D $.name is required;
+	has Int:D $.table = 0;
+	has Int:D $.column = 0;
+	has Int:D $.type = 0;
+	has Int:D $.size = 0;
+	has Int:D $.modifier = 0;
+	has Format $.format = Text;
+}
+multi map-type(FieldDescription) { Object[FieldDescription] }
+
 role Packet::Base {
 	method header() { ... }
 	method !schema() { state $ = Schema.new }
@@ -308,20 +332,6 @@ role Packet::Base {
 		self.bless(|self!schema.decode($buffer.subbuf(5)));
 	}
 }
-
-role OpenPacket::Base {
-	my $packet = Schema.new((:payload(VarByte[Int32, True])));
-	method encode(--> Blob) {
-		my $payload = self!schema.encode(self.Capture.hash);
-		$packet.encode({:$payload});
-	}
-	method decode(Blob $buffer --> OpenPacket::Base) {
-		self.bless(|self!schema.decode($buffer.subbuf(4)));
-	}
-}
-
-enum Format <Text Binary>;
-multi map-type(Format) { Enum[Format, Int16] }
 
 role Packet::Authentication does Packet::Base {
 	method header(--> 82) {}
@@ -394,15 +404,6 @@ class Packet::BindComplete does Packet::Base {
 	method header(--> 50) {}
 }
 
-class OpenPacket::CancelRequest does OpenPacket::Base {
-	method !schema() { state $ = Schema.new((:80877102id, :process-id(Int), :secret-key(Int))) }
-	has Int:D $.process-id is required;
-	has Int:D $.secret-key is required;
-}
-
-enum RequestType (:Prepared(83), :Portal(80));
-multi map-type(RequestType) { Enum[RequestType, Int8] }
-
 class Packet::Close does Packet::Base {
 	method header(--> 67) {}
 	method !schema() { state $ = Schema.new((:type(RequestType), :name(Str))) }
@@ -474,8 +475,6 @@ class Packet::EmptyQueryResponse does Packet::Base {
 	method header(--> 73) {}
 }
 
-multi map-type(ErrorField) { Enum[ErrorField, Int8] }
-
 class Packet::ErrorResponse does Packet::Base {
 	method header(--> 69) {}
 	method !schema() { state $ = Schema.new((:values(Hash[Str, ErrorField]))) }
@@ -506,10 +505,6 @@ class Packet::FunctionCallResponse does Packet::Base {
 	method header(--> 86) {}
 	method !schema() { state $ = Schema.new((:value(Blob))) }
 	has Blob:D $.value is required;
-}
-
-class OpenPacket::GSSENCRequest does OpenPacket::Base {
-	method !schema() { state $ = Schema.new((:80877104id)) }
 }
 
 class Packet::GSSResponse does Packet::Base {
@@ -583,27 +578,11 @@ class Packet::Query does Packet::Base {
 	has Str:D $.query is required;
 }
 
-enum QueryStatus (:Idle(73), :Transaction(84), :Error(69));
-multi map-type(QueryStatus) { Enum[QueryStatus, Int8] }
-
 class Packet::ReadyForQuery does Packet::Base {
 	method header(--> 90) {}
 	method !schema() { state $ = Schema.new((:status(QueryStatus))) }
 	has QueryStatus:D $.status is required;
 }
-
-class FieldDescription {
-	my $schema = Schema.new((:name(Str), :table(Int32), :column(Int16), :type(Int32), :size(Int16), :modifier(Int32), :format(Format)));
-	method schema() { $schema }
-	has Str:D $.name is required;
-	has Int:D $.table = 0;
-	has Int:D $.column = 0;
-	has Int:D $.type = 0;
-	has Int:D $.size = 0;
-	has Int:D $.modifier = 0;
-	has Format $.format = Text;
-}
-multi map-type(FieldDescription) { Object[FieldDescription] }
 
 class Packet::RowDescription does Packet::Base {
 	method header(--> 84) {}
@@ -622,15 +601,6 @@ class Packet::SASLResponse does Packet::Base {
 	method header(--> 112) {}
 	method !schema() { state $ = Schema.new((:client-payload(Tail))) }
 	has Blob:D $.client-payload is required;
-}
-
-class OpenPacket::SSLRequest does OpenPacket::Base {
-	method !schema() { state $ = Schema.new((:80877103id)) }
-}
-
-class OpenPacket::StartupMessage does OpenPacket::Base {
-	method !schema() { state $ = Schema.new((:196608id, :parameters(Hash[Str, Str]))) }
-	has Str %.parameters is required;
 }
 
 class Packet::Sync does Packet::Base {
@@ -677,6 +647,36 @@ class PacketDecoder {
 		my &decoder = %!decoder-for{$payload[0]} or die X::Client.new('Invalid message type ' ~ $payload.subbuf(0, 1).decode);
 		decoder(Blob.new($payload));
 	}
+}
+
+role OpenPacket::Base {
+	my $packet = Schema.new((:payload(VarByte[Int32, True])));
+	method encode(--> Blob) {
+		my $payload = self!schema.encode(self.Capture.hash);
+		$packet.encode({:$payload});
+	}
+	method decode(Blob $buffer --> OpenPacket::Base) {
+		self.bless(|self!schema.decode($buffer.subbuf(4)));
+	}
+}
+
+class OpenPacket::CancelRequest does OpenPacket::Base {
+	method !schema() { state $ = Schema.new((:80877102id, :process-id(Int), :secret-key(Int))) }
+	has Int:D $.process-id is required;
+	has Int:D $.secret-key is required;
+}
+
+class OpenPacket::GSSENCRequest does OpenPacket::Base {
+	method !schema() { state $ = Schema.new((:80877104id)) }
+}
+
+class OpenPacket::SSLRequest does OpenPacket::Base {
+	method !schema() { state $ = Schema.new((:80877103id)) }
+}
+
+class OpenPacket::StartupMessage does OpenPacket::Base {
+	method !schema() { state $ = Schema.new((:196608id, :parameters(Hash[Str, Str]))) }
+	has Str %.parameters is required;
 }
 
 my role Protocol {
