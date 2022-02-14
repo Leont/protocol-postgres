@@ -6,14 +6,14 @@ use Protocol::Postgres;
 
 for client-cases() -> $case {
 	my $encoded = $case.encode;
-	my $decoder = Protocol::Postgres::PacketDecoder.new(:buffer($encoded), :type(Protocol::Postgres::Back));
+	my $decoder = Protocol::Postgres::Packet::Decoder.new(:buffer($encoded), :type(Protocol::Postgres::Packet::Back));
 	my $decoded = $decoder.read-packet;
 	is-deeply($case, $decoded, $case.^name);
 }
 
 for server-cases() -> $case {
 	my $encoded = $case.encode;
-	my $decoder = Protocol::Postgres::PacketDecoder.new(:buffer($encoded), :type(Protocol::Postgres::Front));
+	my $decoder = Protocol::Postgres::Packet::Decoder.new(:buffer($encoded), :type(Protocol::Postgres::Packet::Front));
 	my $decoded = $decoder.read-packet;
 	is-deeply($case, $decoded, $case.^name);
 }

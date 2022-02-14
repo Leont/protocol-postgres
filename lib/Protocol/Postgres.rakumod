@@ -319,333 +319,335 @@ class FieldDescription {
 }
 multi map-type(FieldDescription) { Object[FieldDescription] }
 
-role Packet::Base {
-	method header() { ... }
-	method !schema() { state $ = Schema.new }
-	my $packet = Schema.new((:header(Int8), :payload(VarByte[Int32, True])));
-	method encode(--> Blob) {
-		my $header = self.header;
-		my $payload = self!schema.encode(self.Capture.hash);
-		$packet.encode({:$header, :$payload});
+package Packet {
+	role Base {
+		method header() { ... }
+		method !schema() { state $ = Schema.new }
+		my $packet = Schema.new((:header(Int8), :payload(VarByte[Int32, True])));
+		method encode(--> Blob) {
+			my $header = self.header;
+			my $payload = self!schema.encode(self.Capture.hash);
+			$packet.encode({:$header, :$payload});
+		}
+		method decode(Blob $buffer --> Base) {
+			self.bless(|self!schema.decode($buffer.subbuf(5)));
+		}
 	}
-	method decode(Blob $buffer --> Packet::Base) {
-		self.bless(|self!schema.decode($buffer.subbuf(5)));
+
+	role Authentication does Base {
+		method header(--> 82) {}
+		method type() { ... }
 	}
-}
 
-role Packet::Authentication does Packet::Base {
-	method header(--> 82) {}
-	method type() { ... }
-}
-
-class Packet::AuthenticationOk does Packet::Authentication {
-	method type(--> 0) {}
-	method !schema() { state $ = Schema.new((:0type)) }
-}
-class Packet::AuthenticationKerberosV5 does Packet::Authentication {
-	method type(--> 2) {}
-	method !schema() { state $ = Schema.new((:2type)) }
-}
-class Packet::AuthenticationCleartextPassword does Packet::Authentication {
-	method type( --> 3) {}
-	method !schema() { state $ = Schema.new((:3type)) }
-}
-class Packet::AuthenticationMD5Password does Packet::Authentication {
-	method type(--> 5) {}
-	method !schema() { state $ = Schema.new((:5type, :salt(Tail))) }
-	has Blob:D $.salt is required;
-}
-class Packet::AuthenticationSCMCredential does Packet::Authentication {
-	method type(--> 7) {}
-	method !schema() { state $ = Schema.new((:7type)) }
-}
-class Packet::AuthenticationGSSContinue does Packet::Authentication {
-	method type(--> 8) {}
-	method !schema() { state $ = Schema.new((:8type)) }
-}
-class Packet::AuthenticationSSPI does Packet::Authentication {
-	method type(--> 9) {}
-	method !schema() { state $ = Schema.new((:9type)) }
-}
-class Packet::AuthenticationSASL does Packet::Authentication {
-	method type(--> 10) {}
-	method !schema() { state $ = Schema.new((:10type, :mechanisms(Series[Str]))) }
-	has Str:D @.mechanisms is required;
-}
-class Packet::AuthenticationSASLContinue does Packet::Authentication {
-	method type(--> 11) {}
-	method !schema() { state $ = Schema.new((:11type, :server-payload(Tail))) }
-	has Blob:D $.server-payload is required;
-}
-class Packet::AuthenticationSASLFinal does Packet::Authentication {
-	method type(--> 12) {}
-	method !schema() { state $ = Schema.new((:12type, :server-payload(Tail))) }
-	has Blob:D $.server-payload is required;
-}
-
-class Packet::BackendKeyData does Packet::Base {
-	method header(--> 75) {}
-	method !schema() { state $ = Schema.new((:process-id(Int), :secret-key(Int))) }
-	has Int:D $.process-id is required;
-	has Int:D $.secret-key is required;
-}
-
-class Packet::Bind does Packet::Base {
-	method header(--> 66) {}
-	method !schema() { Schema.new((:portal(Str), :name(Str), :formats(Array[Format]), :fields(Array[Blob]), :result-formats(Array[Format]))) }
-	has Str:D $.portal = '';
-	has Str:D $.name = '';
-	has Format @.formats = ();
-	has Blob @.fields = ();
-	has Format @.result-formats = ();
-}
-
-class Packet::BindComplete does Packet::Base {
-	method header(--> 50) {}
-}
-
-class Packet::Close does Packet::Base {
-	method header(--> 67) {}
-	method !schema() { state $ = Schema.new((:type(RequestType), :name(Str))) }
-	has RequestType:D $.type is required;
-	has Str:D $.name = '';
-}
-
-class Packet::CloseComplete does Packet::Base {
-	method header(--> 51) {}
-}
-
-class Packet::CommandComplete does Packet::Base {
-	method header(--> 67) {}
-	method !schema() { state $ = Schema.new((:command(Str))) }
-	has Str:D $.command is required;
-}
-
-class Packet::CopyData does Packet::Base {
-	method header(--> 100) {}
-	method !schema() { state $ = Schema.new((:row(Tail))) }
-	has Blob:D $.row is required;
-}
-
-class Packet::CopyDone does Packet::Base {
-	method header(--> 99) {}
-}
-
-class Packet::CopyFail does Packet::Base {
-	method header(--> 102) {}
-	method !schema() { state $ = Schema.new((:reason(Str))) }
-	has Str:D $.reason is required;
-}
-
-class Packet::CopyInResponse does Packet::Base {
-	method header(--> 71) {}
-	method !schema() { state $ = Schema.new((:format(Enum[Format, Int8]), :row-formats(Array[Format]))) }
-	has Format:D $.format = Text;
-	has Int @.row-formats = ();
-}
-
-class Packet::CopyOutResponse does Packet::Base {
-	method header(--> 72) {}
-	method !schema() { state $ = Schema.new((:format(Enum[Format, Int8]), :row-formats(Array[Format]))) }
-	has Format:D $.format = Text;
-	has Int @.row-formats = ();
-}
-
-class Packet::CopyBothResponse does Packet::Base {
-	method header(--> 87) {}
-	method !schema() { state $ = Schema.new((:format(Enum[Format, Int8]), :row-formats(Array[Format]))) }
-	has Format:D $.format = Text;
-	has Int @.row-formats = ();
-}
-
-class Packet::DataRow does Packet::Base {
-	method header(--> 68) {}
-	method !schema() { state $ = Schema.new((:values(Array[Blob]))) }
-	has Blob @.values is required;
-}
-
-class Packet::Describe does Packet::Base {
-	method header(--> 68) {}
-	method !schema() { state $ = Schema.new((:type(RequestType), :name(Str))) }
-	has RequestType:D $.type = Portal;
-	has Str:D $.name = '';
-}
-
-class Packet::EmptyQueryResponse does Packet::Base {
-	method header(--> 73) {}
-}
-
-class Packet::ErrorResponse does Packet::Base {
-	method header(--> 69) {}
-	method !schema() { state $ = Schema.new((:values(Hash[Str, ErrorField]))) }
-	has Str %.values{ErrorField} is required;
-}
-
-class Packet::Execute does Packet::Base {
-	method header(--> 69) {}
-	method !schema() { state $ = Schema.new((:name(Str), :maximum-rows(Int))) }
-	has Str:D $.name = '';
-	has Int:D $.maximum-rows = 0;
-}
-
-class Packet::Flush does Packet::Base {
-	method header(--> 72) {}
-}
-
-class Packet::FunctionCall does Packet::Base {
-	method header(--> 70) {}
-	method !schema() { state $ = Schema.new((:object-id(Int), :formats(Array[Format]), :values(Array[Blob]), :result-format(Format))) }
-	has Int:D $.object-id is required;
-	has Format @.formats = ();
-	has Blob @.values = ();
-	has Format $.result-format = Text;
-}
-
-class Packet::FunctionCallResponse does Packet::Base {
-	method header(--> 86) {}
-	method !schema() { state $ = Schema.new((:value(Blob))) }
-	has Blob:D $.value is required;
-}
-
-class Packet::GSSResponse does Packet::Base {
-	method header(--> 112) {}
-	method !schema() { state $ = Schema.new((:payload(Blob))) }
-	has Blob:D $.payload is required;
-}
-
-class Packet::NegotiateProtocolVersion does Packet::Base {
-	method header(--> 118) {}
-	method !schema() { state $ = Schema.new((:newest-minor-version(Int))) }
-	has Int:D $.newest-minor-version is required;
-}
-
-class Packet::NoData does Packet::Base {
-	method header(--> 110) {}
-}
-
-class Packet::NoticeResponse does Packet::Base {
-	method header(--> 78) {}
-	method !schema() { state $ = Schema.new((:values(Hash[Str, ErrorField]))) }
-	has Str %.values{ErrorField} is required;
-}
-
-class Packet::NotificationResponse does Packet::Base {
-	method header(--> 65) {}
-	method !schema() { state $ = Schema.new((:sender(Int), :channel(Str), :payload(Str))) }
-	has Int:D $.sender is required;
-	has Str:D $.channel is required;
-	has Str:D $.payload is required;
-}
-
-class Packet::ParameterDescription does Packet::Base {
-	method header(--> 116) {}
-	method !schema() { state $ = Schema.new((:types(Array[Int]))) }
-	has Int @.types is required;
-}
-
-class Packet::ParameterStatus does Packet::Base {
-	method header(--> 83) {}
-	method !schema() { state $ = Schema.new((:name(Str), :value(Str))) }
-	has Str:D $.name is required;
-	has Str:D $.value is required;
-}
-
-class Packet::Parse does Packet::Base {
-	method header(--> 80) {}
-	method !schema() { state $ = Schema.new((:name(Str), :query(Str), :oids(Array[Int]))) }
-	has Str:D $.name = '';
-	has Str:D $.query is required;
-	has Int @.oids = ();
-}
-
-class Packet::ParseComplete does Packet::Base {
-	method header(--> 49) {}
-}
-
-class Packet::PasswordMessage does Packet::Base {
-	method header(--> 112) {}
-	method !schema() { state $ = Schema.new((:password(Str))) }
-	has Str:D $.password is required;
-}
-
-class Packet::PortalSuspended does Packet::Base {
-	method header(--> 115) {}
-}
-
-class Packet::Query does Packet::Base {
-	method header(--> 81) {}
-	method !schema() { state $ = Schema.new((:query(Str))) }
-	has Str:D $.query is required;
-}
-
-class Packet::ReadyForQuery does Packet::Base {
-	method header(--> 90) {}
-	method !schema() { state $ = Schema.new((:status(QueryStatus))) }
-	has QueryStatus:D $.status is required;
-}
-
-class Packet::RowDescription does Packet::Base {
-	method header(--> 84) {}
-	method !schema() { state $ = Schema.new((:fields(Array[FieldDescription]))) }
-	has FieldDescription @.fields is required;
-}
-
-class Packet::SASLInitialResponse does Packet::Base {
-	method header(--> 112) {}
-	method !schema() { state $ = Schema.new((:mechanism(Str), :initial-response(Blob))) }
-	has Str:D $.mechanism is required;
-	has Blob:D $.initial-response is required;
-}
-
-class Packet::SASLResponse does Packet::Base {
-	method header(--> 112) {}
-	method !schema() { state $ = Schema.new((:client-payload(Tail))) }
-	has Blob:D $.client-payload is required;
-}
-
-class Packet::Sync does Packet::Base {
-	method header(--> 83) {}
-}
-
-class Packet::Terminate does Packet::Base {
-	method header(--> 88) {}
-}
-
-my sub get-decoder(Packet::Base $class) {
-	$class.header => { $class.decode($^payload) }
-}
-
-my Callable %front-decoder = map &get-decoder, Packet::BackendKeyData, Packet::BindComplete, Packet::CloseComplete, Packet::CommandComplete, Packet::CopyData, Packet::CopyDone, Packet::CopyInResponse, Packet::CopyOutResponse, Packet::CopyBothResponse, Packet::DataRow, Packet::EmptyQueryResponse, Packet::ErrorResponse, Packet::FunctionCallResponse, Packet::NegotiateProtocolVersion, Packet::NoData, Packet::NoticeResponse, Packet::NotificationResponse, Packet::ParameterDescription, Packet::ParameterStatus, Packet::ParseComplete, Packet::PortalSuspended, Packet::ReadyForQuery, Packet::RowDescription;
-
-%front-decoder{82} = -> $payload {
-	state %authentication-map = map { .type => $_ }, Packet::AuthenticationOk, Packet::AuthenticationKerberosV5, Packet::AuthenticationCleartextPassword, Packet::AuthenticationMD5Password, Packet::AuthenticationSCMCredential, Packet::AuthenticationGSSContinue, Packet::AuthenticationSSPI, Packet::AuthenticationSASL, Packet::AuthenticationSASLContinue, Packet::AuthenticationSASLFinal;
-	my $type = $payload.read-int32(5, BigEndian);
-	%authentication-map{$type}.decode($payload);
-}
-
-my Callable %back-decoder = map &get-decoder, Packet::Bind, Packet::Close, Packet::CopyData, Packet::CopyDone, Packet::CopyFail, Packet::Execute, Packet::Flush, Packet::FunctionCall, Packet::GSSResponse, Packet::Parse, Packet::PasswordMessage, Packet::Query, Packet::SASLInitialResponse, Packet::SASLResponse, Packet::Sync, Packet::Terminate;
-
-enum Side <Front Back>;
-
-class PacketDecoder {
-	has Buf:D $!buffer is required;
-	has Callable %!decoder-for;
-
-	submethod BUILD(Blob :$buffer, Side :$type = Front) {
-		$!buffer = Buf.new($buffer // ());
-		%!decoder-for = $type === Front ?? %front-decoder !! %back-decoder;
+	class AuthenticationOk does Authentication {
+		method type(--> 0) {}
+		method !schema() { state $ = Schema.new((:0type)) }
 	}
-	method add-data(Blob:D $data --> Nil) {
-		$!buffer ~= $data;
+	class AuthenticationKerberosV5 does Authentication {
+		method type(--> 2) {}
+		method !schema() { state $ = Schema.new((:2type)) }
 	}
-	method read-packet(--> Packet::Base) {
-		return Packet::Base if $!buffer.elems < 5;
-		my $length = $!buffer.read-int32(1, BigEndian);
-		return Packet::Base if $!buffer.elems < 1 + $length;
-		my $payload = $!buffer.subbuf(0, 1 + $length);
-		$!buffer.subbuf-rw(0, 1 + $length) = Blob.new;
-		my &decoder = %!decoder-for{$payload[0]} or die X::Client.new('Invalid message type ' ~ $payload.subbuf(0, 1).decode);
-		decoder(Blob.new($payload));
+	class AuthenticationCleartextPassword does Authentication {
+		method type( --> 3) {}
+		method !schema() { state $ = Schema.new((:3type)) }
+	}
+	class AuthenticationMD5Password does Authentication {
+		method type(--> 5) {}
+		method !schema() { state $ = Schema.new((:5type, :salt(Tail))) }
+		has Blob:D $.salt is required;
+	}
+	class AuthenticationSCMCredential does Authentication {
+		method type(--> 7) {}
+		method !schema() { state $ = Schema.new((:7type)) }
+	}
+	class AuthenticationGSSContinue does Authentication {
+		method type(--> 8) {}
+		method !schema() { state $ = Schema.new((:8type)) }
+	}
+	class AuthenticationSSPI does Authentication {
+		method type(--> 9) {}
+		method !schema() { state $ = Schema.new((:9type)) }
+	}
+	class AuthenticationSASL does Authentication {
+		method type(--> 10) {}
+		method !schema() { state $ = Schema.new((:10type, :mechanisms(Series[Str]))) }
+		has Str:D @.mechanisms is required;
+	}
+	class AuthenticationSASLContinue does Authentication {
+		method type(--> 11) {}
+		method !schema() { state $ = Schema.new((:11type, :server-payload(Tail))) }
+		has Blob:D $.server-payload is required;
+	}
+	class AuthenticationSASLFinal does Authentication {
+		method type(--> 12) {}
+		method !schema() { state $ = Schema.new((:12type, :server-payload(Tail))) }
+		has Blob:D $.server-payload is required;
+	}
+
+	class BackendKeyData does Base {
+		method header(--> 75) {}
+		method !schema() { state $ = Schema.new((:process-id(Int), :secret-key(Int))) }
+		has Int:D $.process-id is required;
+		has Int:D $.secret-key is required;
+	}
+
+	class Bind does Base {
+		method header(--> 66) {}
+		method !schema() { Schema.new((:portal(Str), :name(Str), :formats(Array[Format]), :fields(Array[Blob]), :result-formats(Array[Format]))) }
+		has Str:D $.portal = '';
+		has Str:D $.name = '';
+		has Format @.formats = ();
+		has Blob @.fields = ();
+		has Format @.result-formats = ();
+	}
+
+	class BindComplete does Base {
+		method header(--> 50) {}
+	}
+
+	class Close does Base {
+		method header(--> 67) {}
+		method !schema() { state $ = Schema.new((:type(RequestType), :name(Str))) }
+		has RequestType:D $.type is required;
+		has Str:D $.name = '';
+	}
+
+	class CloseComplete does Base {
+		method header(--> 51) {}
+	}
+
+	class CommandComplete does Base {
+		method header(--> 67) {}
+		method !schema() { state $ = Schema.new((:command(Str))) }
+		has Str:D $.command is required;
+	}
+
+	class CopyData does Base {
+		method header(--> 100) {}
+		method !schema() { state $ = Schema.new((:row(Tail))) }
+		has Blob:D $.row is required;
+	}
+
+	class CopyDone does Base {
+		method header(--> 99) {}
+	}
+
+	class CopyFail does Base {
+		method header(--> 102) {}
+		method !schema() { state $ = Schema.new((:reason(Str))) }
+		has Str:D $.reason is required;
+	}
+
+	class CopyInResponse does Base {
+		method header(--> 71) {}
+		method !schema() { state $ = Schema.new((:format(Enum[Format, Int8]), :row-formats(Array[Format]))) }
+		has Format:D $.format = Text;
+		has Int @.row-formats = ();
+	}
+
+	class CopyOutResponse does Base {
+		method header(--> 72) {}
+		method !schema() { state $ = Schema.new((:format(Enum[Format, Int8]), :row-formats(Array[Format]))) }
+		has Format:D $.format = Text;
+		has Int @.row-formats = ();
+	}
+
+	class CopyBothResponse does Base {
+		method header(--> 87) {}
+		method !schema() { state $ = Schema.new((:format(Enum[Format, Int8]), :row-formats(Array[Format]))) }
+		has Format:D $.format = Text;
+		has Int @.row-formats = ();
+	}
+
+	class DataRow does Base {
+		method header(--> 68) {}
+		method !schema() { state $ = Schema.new((:values(Array[Blob]))) }
+		has Blob @.values is required;
+	}
+
+	class Describe does Base {
+		method header(--> 68) {}
+		method !schema() { state $ = Schema.new((:type(RequestType), :name(Str))) }
+		has RequestType:D $.type = Portal;
+		has Str:D $.name = '';
+	}
+
+	class EmptyQueryResponse does Base {
+		method header(--> 73) {}
+	}
+
+	class ErrorResponse does Base {
+		method header(--> 69) {}
+		method !schema() { state $ = Schema.new((:values(Hash[Str, ErrorField]))) }
+		has Str %.values{ErrorField} is required;
+	}
+
+	class Execute does Base {
+		method header(--> 69) {}
+		method !schema() { state $ = Schema.new((:name(Str), :maximum-rows(Int))) }
+		has Str:D $.name = '';
+		has Int:D $.maximum-rows = 0;
+	}
+
+	class Flush does Base {
+		method header(--> 72) {}
+	}
+
+	class FunctionCall does Base {
+		method header(--> 70) {}
+		method !schema() { state $ = Schema.new((:object-id(Int), :formats(Array[Format]), :values(Array[Blob]), :result-format(Format))) }
+		has Int:D $.object-id is required;
+		has Format @.formats = ();
+		has Blob @.values = ();
+		has Format $.result-format = Text;
+	}
+
+	class FunctionCallResponse does Base {
+		method header(--> 86) {}
+		method !schema() { state $ = Schema.new((:value(Blob))) }
+		has Blob:D $.value is required;
+	}
+
+	class GSSResponse does Base {
+		method header(--> 112) {}
+		method !schema() { state $ = Schema.new((:payload(Blob))) }
+		has Blob:D $.payload is required;
+	}
+
+	class NegotiateProtocolVersion does Base {
+		method header(--> 118) {}
+		method !schema() { state $ = Schema.new((:newest-minor-version(Int))) }
+		has Int:D $.newest-minor-version is required;
+	}
+
+	class NoData does Base {
+		method header(--> 110) {}
+	}
+
+	class NoticeResponse does Base {
+		method header(--> 78) {}
+		method !schema() { state $ = Schema.new((:values(Hash[Str, ErrorField]))) }
+		has Str %.values{ErrorField} is required;
+	}
+
+	class NotificationResponse does Base {
+		method header(--> 65) {}
+		method !schema() { state $ = Schema.new((:sender(Int), :channel(Str), :payload(Str))) }
+		has Int:D $.sender is required;
+		has Str:D $.channel is required;
+		has Str:D $.payload is required;
+	}
+
+	class ParameterDescription does Base {
+		method header(--> 116) {}
+		method !schema() { state $ = Schema.new((:types(Array[Int]))) }
+		has Int @.types is required;
+	}
+
+	class ParameterStatus does Base {
+		method header(--> 83) {}
+		method !schema() { state $ = Schema.new((:name(Str), :value(Str))) }
+		has Str:D $.name is required;
+		has Str:D $.value is required;
+	}
+
+	class Parse does Base {
+		method header(--> 80) {}
+		method !schema() { state $ = Schema.new((:name(Str), :query(Str), :oids(Array[Int]))) }
+		has Str:D $.name = '';
+		has Str:D $.query is required;
+		has Int @.oids = ();
+	}
+
+	class ParseComplete does Base {
+		method header(--> 49) {}
+	}
+
+	class PasswordMessage does Base {
+		method header(--> 112) {}
+		method !schema() { state $ = Schema.new((:password(Str))) }
+		has Str:D $.password is required;
+	}
+
+	class PortalSuspended does Base {
+		method header(--> 115) {}
+	}
+
+	class Query does Base {
+		method header(--> 81) {}
+		method !schema() { state $ = Schema.new((:query(Str))) }
+		has Str:D $.query is required;
+	}
+
+	class ReadyForQuery does Base {
+		method header(--> 90) {}
+		method !schema() { state $ = Schema.new((:status(QueryStatus))) }
+		has QueryStatus:D $.status is required;
+	}
+
+	class RowDescription does Base {
+		method header(--> 84) {}
+		method !schema() { state $ = Schema.new((:fields(Array[FieldDescription]))) }
+		has FieldDescription @.fields is required;
+	}
+
+	class SASLInitialResponse does Base {
+		method header(--> 112) {}
+		method !schema() { state $ = Schema.new((:mechanism(Str), :initial-response(Blob))) }
+		has Str:D $.mechanism is required;
+		has Blob:D $.initial-response is required;
+	}
+
+	class SASLResponse does Base {
+		method header(--> 112) {}
+		method !schema() { state $ = Schema.new((:client-payload(Tail))) }
+		has Blob:D $.client-payload is required;
+	}
+
+	class Sync does Base {
+		method header(--> 83) {}
+	}
+
+	class Terminate does Base {
+		method header(--> 88) {}
+	}
+
+	my sub get-decoder(Packet::Base $class) {
+		$class.header => { $class.decode($^payload) }
+	}
+
+	my Callable %front-decoder = map &get-decoder, Packet::BackendKeyData, Packet::BindComplete, Packet::CloseComplete, Packet::CommandComplete, Packet::CopyData, Packet::CopyDone, Packet::CopyInResponse, Packet::CopyOutResponse, Packet::CopyBothResponse, Packet::DataRow, Packet::EmptyQueryResponse, Packet::ErrorResponse, Packet::FunctionCallResponse, Packet::NegotiateProtocolVersion, Packet::NoData, Packet::NoticeResponse, Packet::NotificationResponse, Packet::ParameterDescription, Packet::ParameterStatus, Packet::ParseComplete, Packet::PortalSuspended, Packet::ReadyForQuery, Packet::RowDescription;
+
+	%front-decoder{82} = -> $payload {
+		state %authentication-map = map { .type => $_ }, Packet::AuthenticationOk, Packet::AuthenticationKerberosV5, Packet::AuthenticationCleartextPassword, Packet::AuthenticationMD5Password, Packet::AuthenticationSCMCredential, Packet::AuthenticationGSSContinue, Packet::AuthenticationSSPI, Packet::AuthenticationSASL, Packet::AuthenticationSASLContinue, Packet::AuthenticationSASLFinal;
+		my $type = $payload.read-int32(5, BigEndian);
+		%authentication-map{$type}.decode($payload);
+	}
+
+	my Callable %back-decoder = map &get-decoder, Packet::Bind, Packet::Close, Packet::CopyData, Packet::CopyDone, Packet::CopyFail, Packet::Execute, Packet::Flush, Packet::FunctionCall, Packet::GSSResponse, Packet::Parse, Packet::PasswordMessage, Packet::Query, Packet::SASLInitialResponse, Packet::SASLResponse, Packet::Sync, Packet::Terminate;
+
+	enum Side <Front Back>;
+
+	class Decoder {
+		has Buf:D $!buffer is required;
+		has Callable %!decoder-for;
+
+		submethod BUILD(Blob :$buffer, Side :$type = Front) {
+			$!buffer = Buf.new($buffer // ());
+			%!decoder-for = $type === Front ?? %front-decoder !! %back-decoder;
+		}
+		method add-data(Blob:D $data --> Nil) {
+			$!buffer ~= $data;
+		}
+		method read-packet(--> Packet::Base) {
+			return Packet::Base if $!buffer.elems < 5;
+			my $length = $!buffer.read-int32(1, BigEndian);
+			return Packet::Base if $!buffer.elems < 1 + $length;
+			my $payload = $!buffer.subbuf(0, 1 + $length);
+			$!buffer.subbuf-rw(0, 1 + $length) = Blob.new;
+			my &decoder = %!decoder-for{$payload[0]} or die X::Client.new('Invalid message type ' ~ $payload.subbuf(0, 1).decode);
+			decoder(Blob.new($payload));
+		}
 	}
 }
 
@@ -1132,7 +1134,7 @@ class Client {
 	has Supplier $!outbound-messages handles(:outbound-messages<Supply>) = Supplier.new;
 	has Supply $!outbound-data;
 	has Supplier $!notifications handles(:notifications<Supply>) = Supplier.new;
-	has PacketDecoder $!decoder = PacketDecoder.new;
+	has Packet::Decoder $!decoder = Packet::Decoder.new;
 	has Int $!prepare-counter = 0;
 	has TypeMap $.typemap = TypeMap::Simple;
 
