@@ -1,6 +1,7 @@
 unit module Protocol::Postgres:ver<0.0.1>:auth<cpan:LEONT>;
 
 enum ErrorField (:SeverityLocalized(83), :Severity(86), :ErrorCode(67), :Message(77), :Detail(68), :Hint(72), :Position(80), :InternalPosition(112), :InternalQuery(113), :Where(87), :SchemaName(115), :Table(116), :Column(99), :Datatype(100), :Constraint(110), :File(70), :Line(76), :Routine(82));
+constant ErrorMap = Hash[Str, ErrorField];
 
 package X {
 	our class Client is Exception {
@@ -1138,7 +1139,23 @@ class Client {
 	has Supplier $!notifications handles(:notifications<Supply>) = Supplier.new;
 	has Packet::Decoder $!decoder = Packet::Decoder.new;
 	has Int $!prepare-counter = 0;
+	has Promise:D $.disconnected = Promise.new;
 	has TypeMap $.typemap = TypeMap::Simple;
+	submethod TWEAK() {
+		$!disconnected.then: {
+			my $message = $!disconnected ~~ Broken ?? $!disconnected.cause.message !! 'Disconnected';
+			my %error := ErrorMap.new((Message) => $message, (Severity) => 'FATAL');
+			if not $!startup-promise {
+				$!startup-promise.break($!disconnected ~~ Broken ?? $!disconnected.cause !! X::Client.new($message));
+			}
+			if $!protocol {
+				$!protocol.failed(%error);
+			}
+			for @!tasks -> $ (:$protocol, :@packets) {
+				$protocol.failed(%error);
+			}
+		}
+	}
 
 	has Int $!process-id handles(:process-id<self>);
 	has Int $!secret-key;
@@ -1170,7 +1187,9 @@ class Client {
 	}
 
 	method !submit(Protocol:D $protocol, @packets) {
-		if $!protocol or not $!startup-promise {
+		if $!disconnected {
+			$protocol.failed(ErrorMap.new((Message) => 'Disconnected', (Severity) => 'FATAL'));
+		} elsif $!protocol or not $!startup-promise {
 			@!tasks.push(Task.new(:$protocol, :@packets));
 		} else {
 			self!send-next($protocol, @packets);
