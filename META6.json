@@ -8,7 +8,7 @@
     "Auth::SCRAM::Async",
     "OpenSSL"
   ],
-  "description" : "blah blah blah",
+  "description" : "A sans-io postgresql client",
   "license" : "Artistic-2.0",
   "name" : "Protocol::Postgres",
   "perl" : "6.d",
