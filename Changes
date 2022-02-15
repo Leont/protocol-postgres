@@ -1,6 +1,8 @@
 Revision history for Protocol-Postgres
 
 {{$NEXT}}
+
+0.0.2  2022-02-15T23:18:32+01:00
     - Make Exceptions accessibly from outside the package
     - Add disconnected Promise to Client
 

@@ -130,7 +130,7 @@ This returns a Supply of rows. Each row is a hash with the column names as keys 
 PreparedStatement
 =================
 
-A `Protocol::Postgres::PreparedStatement` represents a prepated statement. It's reason of existence is to call `execute` on it.
+A `Protocol::Postgres::PreparedStatement` represents a prepated statement. Its reason of existence is to call `execute` on it.
 
 execute(@arguments --> Promise[ResultSet])
 ------------------------------------------

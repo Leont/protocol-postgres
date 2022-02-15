@@ -19,5 +19,5 @@
   "source-url" : "https://github.com/Leont/protocol-postgres.git",
   "tags" : [ ],
   "test-depends" : [ ],
-  "version" : "0.0.1"
+  "version" : "0.0.2"
 }
