@@ -8,32 +8,47 @@ unit sub MAIN(Str :$user = ~$*USER, Str :$database = 'test', Str :$password, :$h
 
 my $socket = await IO::Socket::Async.connect($host, $port);
 my $client = Protocol::Postgres::Client.new;
-$socket.Supply(:bin).act({ $client.incoming-data($^data) });
-$client.outbound-data.act({ await $socket.write($^data) });
+$socket.Supply(:bin).act({ $client.incoming-data($^data) }, :done({ $client.disconnected.keep }), :quit({ $client.disconnected.break($^reason) }));
+$client.outbound-data.act({ await $socket.write($^data) }, :done({ $socket.close }));
 
 await $client.startup($user, $database, $password);
 
-for lines() {
-	when / ^ '\\'? q[uit]? / {
-		$client.terminate;
-		last;
+sub io-supply(IO::Handle $handle) {
+	my $supplier = Supplier.new;
+	start {
+		for $handle.lines -> $line {
+			$supplier.emit($line);
+		}
+		$supplier.done;
 	}
-	when / ^ p['arameter ']? $<parameter>=[\w+] / {
-		say $client.get-parameter(~$<parameter>);
-	}
-	default {
-		CATCH { default { say .message } }
-		given await $client.query(~$_) {
-			when Protocol::Postgres::ResultSet {
-				react {
-					whenever .hash-rows -> $row {
-						dd $row;
+	return $supplier.Supply;
+}
+
+react {
+	whenever io-supply($*IN) {
+		when / ^ '\\'? q[uit]? / {
+			$client.terminate;
+		}
+		when / ^ p['arameter ']? $<parameter>=[\w+] / {
+			say $client.get-parameter(~$<parameter>);
+		}
+		default {
+			CATCH { default { say .message } }
+			given await $client.query(~$_) {
+				when Protocol::Postgres::ResultSet {
+					react {
+						whenever .hash-rows -> $row {
+							dd $row;
+						}
 					}
 				}
-			}
-			when Bool {
-				say "Succes.";
+				when Bool {
+					say "Succes.";
+				}
 			}
 		}
+	}
+	whenever $client.disconnected {
+		done;
 	}
 }
