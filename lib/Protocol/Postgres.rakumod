@@ -651,34 +651,36 @@ package Packet {
 	}
 }
 
-role OpenPacket::Base {
-	my $packet = Schema.new((:payload(VarByte[Int32, True])));
-	method encode(--> Blob) {
-		my $payload = self!schema.encode(self.Capture.hash);
-		$packet.encode({:$payload});
+package OpenPacket {
+	role Base {
+		my $packet = Schema.new((:payload(VarByte[Int32, True])));
+		method encode(--> Blob) {
+			my $payload = self!schema.encode(self.Capture.hash);
+			$packet.encode({:$payload});
+		}
+		method decode(Blob $buffer --> Base) {
+			self.bless(|self!schema.decode($buffer.subbuf(4)));
+		}
 	}
-	method decode(Blob $buffer --> OpenPacket::Base) {
-		self.bless(|self!schema.decode($buffer.subbuf(4)));
+
+	class CancelRequest does Base {
+		method !schema() { state $ = Schema.new((:80877102id, :process-id(Int), :secret-key(Int))) }
+		has Int:D $.process-id is required;
+		has Int:D $.secret-key is required;
 	}
-}
 
-class OpenPacket::CancelRequest does OpenPacket::Base {
-	method !schema() { state $ = Schema.new((:80877102id, :process-id(Int), :secret-key(Int))) }
-	has Int:D $.process-id is required;
-	has Int:D $.secret-key is required;
-}
+	class GSSENCRequest does Base {
+		method !schema() { state $ = Schema.new((:80877104id)) }
+	}
 
-class OpenPacket::GSSENCRequest does OpenPacket::Base {
-	method !schema() { state $ = Schema.new((:80877104id)) }
-}
+	class SSLRequest does Base {
+		method !schema() { state $ = Schema.new((:80877103id)) }
+	}
 
-class OpenPacket::SSLRequest does OpenPacket::Base {
-	method !schema() { state $ = Schema.new((:80877103id)) }
-}
-
-class OpenPacket::StartupMessage does OpenPacket::Base {
-	method !schema() { state $ = Schema.new((:196608id, :parameters(Hash[Str, Str]))) }
-	has Str %.parameters is required;
+	class StartupMessage does Base {
+		method !schema() { state $ = Schema.new((:196608id, :parameters(Hash[Str, Str]))) }
+		has Str %.parameters is required;
+	}
 }
 
 my role Protocol {
