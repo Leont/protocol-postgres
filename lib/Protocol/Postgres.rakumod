@@ -1075,12 +1075,12 @@ class Client { ... }
 class PreparedStatement {
 	has Client:D $.client is required;
 	has Str:D $.name is required;
-	has Type @.types is required;
+	has Type @.input-types is required;
 	has Bool $!closed = False;
 	method resultset() { ResultSet }
 	method execute(**@values, :@output-types) {
 		die X::Client.new('Prepared statement already closed') if $!closed;
-		die X::Client.new("Wrong number or arguments, got {+@values} expected {+@!types}") if @values != @!types;
+		die X::Client.new("Wrong number or arguments, got {+@values} expected {+@!input-types}") if @values != @!input-types;
 		$!client.execute-prepared(self, @values, :@output-types, :resultset(self.resultset));
 	}
 	method close(--> Promise) {
@@ -1097,17 +1097,17 @@ my class Protocol::Prepare does Protocol {
 	has Str:D $.name is required;
 	has Promise:D $.result is required;
 	has PreparedStatement:U $.prepared-statement is required;
-	has Type @!types;
+	has Type @!input-types;
 
 	multi method incoming-message(Packet::ParseComplete $) {
 	}
 	multi method incoming-message(Packet::RowDescription $ (:@fields)) {
 	}
 	multi method incoming-message(Packet::ParameterDescription $ (:@types)) {
-		@!types = @types.map({ $!client.typemap.for-oid($^type) });
+		@!input-types = @types.map({ $!client.typemap.for-oid($^type) });
 	}
 	method finished() {
-		$!result.keep($!prepared-statement.new(:$!name, :$!client, :@!types));
+		$!result.keep($!prepared-statement.new(:$!name, :$!client, :@!input-types));
 	}
 	method failed(%values) {
 		$!result.break(X::Server.new('Could not prepare', %values));
@@ -1303,9 +1303,9 @@ class Client {
 		my $result = Promise.new;
 		my $protocol = Protocol::ExtendedQuery.new(:$result, :$!typemap, :stage(Binding), :resultset($prepared.resultset));
 
-		my @types = $prepared.types;
-		my @formats = compress-formats(@types».format);
-		my @fields = @types Z[&type-encode] @values;
+		my @input-types = $prepared.input-types;
+		my @formats = compress-formats(@input-types».format);
+		my @fields = @input-types Z[&type-encode] @values;
 
 		my @outputs = @output-types.map: { $!typemap.for-type($^value) };
 		my @result-formats = compress-formats(@outputs».format);
