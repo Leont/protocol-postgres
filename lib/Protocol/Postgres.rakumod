@@ -1043,6 +1043,7 @@ my class Protocol::ExtendedQuery does Protocol {
 	}
 	multi method incoming-message(Packet::EmptyQueryResponse $) {
 		$!stage = Closing;
+		$!result.keep;
 	}
 	multi method incoming-message(Packet::CommandComplete $) {
 		$!stage = Closing;

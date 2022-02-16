@@ -1,6 +1,7 @@
 Revision history for Protocol-Postgres
 
 {{$NEXT}}
+    - Correctly handle empty queries
     - Rename notification attribute payload to message
 
 0.0.2  2022-02-15T23:18:32+01:00
