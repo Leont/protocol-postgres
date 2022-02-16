@@ -1139,7 +1139,7 @@ class Client {
 	has Supplier $!notifications handles(:notifications<Supply>) = Supplier.new;
 	has Packet::Decoder $!decoder = Packet::Decoder.new;
 	has Int $!prepare-counter = 0;
-	has Promise:D $.disconnected = Promise.new;
+	has Promise:D $.disconnected is built(False) = Promise.new;
 	has TypeMap $.typemap = TypeMap::Simple;
 	submethod TWEAK() {
 		$!disconnected.then: {
@@ -1416,6 +1416,10 @@ This sends a message to the server to terminate the connection
 =head2 notifications(--> Supply[Notification])
 
 This returns a supply with all notifications that the current connection is subscribed to. Channels can be subscribed using the C<LISTEN> command, and messages can be sent using the C<NOTIFY> command.
+
+=head2 disconnected(--> Promise)
+
+This returns a C<Promise> that must be be kept or broken to signal the connection is lost.
 
 =head2 process-id(--> Int)
 
