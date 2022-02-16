@@ -1143,7 +1143,7 @@ class Client {
 	has TypeMap $.typemap = TypeMap::Simple;
 	submethod TWEAK() {
 		$!disconnected.then: {
-			my $message = $!disconnected ~~ Broken ?? $!disconnected.cause.message !! 'Disconnected';
+			my $message = $!disconnected ~~ Broken ?? ~$!disconnected.cause !! 'Disconnected';
 			my %error := ErrorMap.new((Message) => $message, (Severity) => 'FATAL');
 			if not $!startup-promise {
 				$!startup-promise.break($!disconnected ~~ Broken ?? $!disconnected.cause !! X::Client.new($message));
@@ -1154,6 +1154,7 @@ class Client {
 			for @!tasks -> $ (:$protocol, :@packets) {
 				$protocol.failed(%error);
 			}
+			$!notifications.done;
 		}
 	}
 
