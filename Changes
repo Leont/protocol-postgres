@@ -1,6 +1,7 @@
 Revision history for Protocol-Postgres
 
 {{$NEXT}}
+    - Rename notification attribute payload to message
 
 0.0.2  2022-02-15T23:18:32+01:00
     - Make Exceptions accessibly from outside the package

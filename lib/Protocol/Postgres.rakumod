@@ -533,10 +533,10 @@ package Packet {
 
 	class NotificationResponse does Base {
 		method header(--> 65) {}
-		method !schema() { state $ = Schema.new((:sender(Int), :channel(Str), :payload(Str))) }
+		method !schema() { state $ = Schema.new((:sender(Int), :channel(Str), :message(Str))) }
 		has Int:D $.sender is required;
 		has Str:D $.channel is required;
-		has Str:D $.payload is required;
+		has Str:D $.message is required;
 	}
 
 	class ParameterDescription does Base {
@@ -1128,7 +1128,7 @@ my class Protocol::Close does Protocol {
 class Notification {
 	has Int:D $.sender is required;
 	has Str:D $.channel is required;
-	has Str:D $.payload is required;
+	has Str:D $.message is required;
 }
 
 class Client {
@@ -1218,8 +1218,8 @@ class Client {
 	multi method incoming-message(Packet::ParameterStatus $ (:$name, :$value)) {
 		%!parameters{$name} = $value;
 	}
-	multi method incoming-message(Packet::NotificationResponse $packet (:$sender, :$channel, :$payload)) {
-		$!notifications.emit(Notification.new(:$sender, :$channel, :$payload));
+	multi method incoming-message(Packet::NotificationResponse $packet (:$sender, :$channel, :$message)) {
+		$!notifications.emit(Notification.new(:$sender, :$channel, :$message));
 	}
 	multi method incoming-message(Packet::ErrorResponse $ (:%values)) {
 		$!protocol.failed(%values);
@@ -1469,9 +1469,9 @@ This is the process-id of the sender
 
 This is the name of the channel that the notification was sent on
 
-=head2 payload(--> Str)
+=head2 message(--> Str)
 
-This is the payload of the notification
+This is the message of the notification
 
 =head1 Todo
 
