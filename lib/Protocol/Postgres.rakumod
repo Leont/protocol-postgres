@@ -1282,7 +1282,7 @@ class Client {
 		all(@oids) == 0 ?? () !! @oids;
 	}
 
-	method query(Str $query, **@values, :@output-types, ResultSet:U :$resultset --> Promise) {
+	method query(Str $query, **@values, ResultSet:U :$resultset --> Promise) {
 		my $result = Promise.new;
 		my $protocol = Protocol::BindingQuery.new(:$result, :$!typemap, :$resultset);
 
@@ -1290,9 +1290,6 @@ class Client {
 		my @oids = compress-oids(@types».oid);
 		my @formats = compress-formats(@types».format);
 		my @fields = @types Z[&type-encode] @values;
-
-		my @outputs = @output-types.map: { $!typemap.for-type($^value) };
-		my @result-formats = compress-formats(@outputs».format);
 
 		self!submit($protocol, [
 			Packet::Parse.new(:$query, :@oids), Packet::Bind.new(:@formats, :@fields),
