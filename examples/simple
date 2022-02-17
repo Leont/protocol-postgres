@@ -42,8 +42,8 @@ react {
 						}
 					}
 				}
-				when Bool {
-					say "Succes.";
+				when Str {
+					say $_;
 				}
 			}
 		}

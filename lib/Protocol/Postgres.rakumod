@@ -1032,14 +1032,14 @@ my role Protocol::ExtendedQuery does Protocol {
 	}
 	multi method incoming-message(Packet::EmptyQueryResponse $) {
 		$!stage = Closing;
-		$!result.keep;
+		$!result.keep('EMPTY');
 	}
-	multi method incoming-message(Packet::CommandComplete $) {
+	multi method incoming-message(Packet::CommandComplete $ (:$tag)) {
 		$!stage = Closing;
 		if $!source {
 			$!source.done;
 		} elsif not $!result {
-			$!result.keep;
+			$!result.keep($tag);
 		}
 	}
 	multi method incoming-message(Packet::CloseComplete $) {
@@ -1409,7 +1409,7 @@ The resulting promise will finish when the connection is ready for queries.
 
 This will issue a query with the given bind values, and return a promise to the result.
 
-For fetching queries such as C<SELECT> the result will be a C<ResultSet> object, for manipulation (e.g. C<INSERT>) and definition (e.g. C<CREATE>) queries it will result in the value C<True>.
+For fetching queries such as C<SELECT> the result will be a C<ResultSet> object, for manipulation (e.g. C<INSERT>) and definition (e.g. C<CREATE>) queries it will result a string describing the change (e.g. C<DELETE 3>).
 
 Both the input types and the output types will be typemapped between Raku types and Postgres types using the typemapper.
 

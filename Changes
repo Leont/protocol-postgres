@@ -4,6 +4,7 @@ Revision history for Protocol-Postgres
     - Correctly handle empty queries
     - Rename notification attribute payload to message
     - Only call DESCRIBE once for prepared queries
+    - Return tag for non-SELECT queries
 
 0.0.2  2022-02-15T23:18:32+01:00
     - Make Exceptions accessibly from outside the package
