@@ -965,9 +965,10 @@ class ResultSet {
 			has Str:D $.name is required;
 			has Format:D $.format is required;
 			has Type $.type is required;
-			method new(FieldDescription:D $field, TypeMap $typemap) {
+			method new(FieldDescription:D $field, TypeMap $typemap, Bool $override) {
 				my $type = $typemap.for-oid($field.type);
-				self.bless(:name($field.name), :format($field.format), :$type);
+				my $format = $override ?? $type.format !! $field.format;
+				self.bless(:name($field.name), :$format, :$type);
 			}
 		}
 		my sub decode(Column $column, Blob $value) {
@@ -975,8 +976,8 @@ class ResultSet {
 		}
 		has Column @.columns is required;
 		has Supplier:D $!rows handles<done quit> = Supplier::Preserving.new;
-		method new(TypeMap $typemap, FieldDescription @fields?) {
-			my @columns = @fields.map: { Column.new($^field, $typemap) };
+		method new(TypeMap $typemap, FieldDescription @fields, Bool $override = False) {
+			my @columns = @fields.map: { Column.new($^field, $typemap, $override) };
 			self.bless(:@columns);
 		}
 		method add-row(@row) {
@@ -1018,28 +1019,16 @@ my class Protocol::Query does Protocol {
 
 my enum Stage (:Parsing<parse>, :Binding<bind>, :Describing<describe>, :Executing<execute>, :Closing<close>, :Syncing<sync>);
 
-my class Protocol::ExtendedQuery does Protocol {
+my role Protocol::ExtendedQuery does Protocol {
 	has Promise:D $.result is required;
-	has TypeMap $.typemap is required;
-	has ResultSet::Source $!source;
+	has ResultSet::Source $.source;
 	has Stage:D $.stage = Parsing;
 	has ResultSet:U $.resultset is required;
-	multi method incoming-message(Packet::ParseComplete $) {
-		$!stage = Binding;
-	}
-	multi method incoming-message(Packet::BindComplete $) {
-		$!stage = Describing;
-	}
-	multi method incoming-message(Packet::RowDescription $ (:@fields)) {
-		$!stage = Executing;
-		$!source = ResultSet::Source.new($!typemap, @fields);
-		$!result.keep($!source.resultset($!resultset));
+	multi method incoming-message(Packet::DataRow $ (:@values)) {
+		$!source.add-row(@values);
 	}
 	multi method incoming-message(Packet::NoData $) {
 		$!stage = Executing;
-	}
-	multi method incoming-message(Packet::DataRow $ (:@values)) {
-		$!source.add-row(@values);
 	}
 	multi method incoming-message(Packet::EmptyQueryResponse $) {
 		$!stage = Closing;
@@ -1049,16 +1038,12 @@ my class Protocol::ExtendedQuery does Protocol {
 		$!stage = Closing;
 		if $!source {
 			$!source.done;
-			$!source = Nil;
 		} elsif not $!result {
 			$!result.keep;
 		}
 	}
 	multi method incoming-message(Packet::CloseComplete $) {
 		$!stage = Syncing;
-	}
-	method finish() {
-		$!result.keep unless $!result;
 	}
 	method failed(%values) {
 		my $exception = X::Server.new("Could not $!stage.value()", %values);
@@ -1070,18 +1055,34 @@ my class Protocol::ExtendedQuery does Protocol {
 	}
 }
 
+my class Protocol::BindingQuery does Protocol::ExtendedQuery {
+	has TypeMap $.typemap is required;
+	multi method incoming-message(Packet::ParseComplete $) {
+		$!stage = Binding;
+	}
+	multi method incoming-message(Packet::BindComplete $) {
+		$!stage = Describing;
+	}
+	multi method incoming-message(Packet::RowDescription $ (:@fields)) {
+		$!stage = Executing;
+		$!source = ResultSet::Source.new($!typemap, @fields);
+		$!result.keep($!source.resultset($!resultset));
+	}
+}
+
 class Client { ... }
 
 class PreparedStatement {
 	has Client:D $.client is required;
 	has Str:D $.name is required;
 	has Type @.input-types is required;
+	has FieldDescription @.output-types is required;
 	has Bool $!closed = False;
 	method resultset() { ResultSet }
-	method execute(**@values, :@output-types) {
+	method execute(**@values) {
 		die X::Client.new('Prepared statement already closed') if $!closed;
 		die X::Client.new("Wrong number or arguments, got {+@values} expected {+@!input-types}") if @values != @!input-types;
-		$!client.execute-prepared(self, @values, :@output-types, :resultset(self.resultset));
+		$!client.execute-prepared(self, @values, :resultset(self.resultset));
 	}
 	method close(--> Promise) {
 		$!closed = True;
@@ -1098,22 +1099,34 @@ my class Protocol::Prepare does Protocol {
 	has Promise:D $.result is required;
 	has PreparedStatement:U $.prepared-statement is required;
 	has Type @!input-types;
+	has FieldDescription @!output-types;
 
 	multi method incoming-message(Packet::ParseComplete $) {
 	}
 	multi method incoming-message(Packet::RowDescription $ (:@fields)) {
+		@!output-types = @fields;
+	}
+	multi method incoming-message(Packet::NoData $) {
 	}
 	multi method incoming-message(Packet::ParameterDescription $ (:@types)) {
 		@!input-types = @types.map({ $!client.typemap.for-oid($^type) });
 	}
 	method finished() {
-		$!result.keep($!prepared-statement.new(:$!name, :$!client, :@!input-types));
+		$!result.keep($!prepared-statement.new(:$!name, :$!client, :@!input-types, :@!output-types));
 	}
 	method failed(%values) {
 		$!result.break(X::Server.new('Could not prepare', %values));
 	}
 }
 
+my class Protocol::Execute does Protocol::ExtendedQuery {
+	multi method incoming-message(Packet::BindComplete $) {
+		$!stage = Executing;
+		if $!source {
+			$!result.keep($!source.resultset($!resultset));
+		}
+	}
+}
 my class Protocol::Close does Protocol {
 	has Promise $.result is required;
 	multi method incoming-message(Packet::CloseComplete $) {
@@ -1271,7 +1284,7 @@ class Client {
 
 	method query(Str $query, **@values, :@output-types, ResultSet:U :$resultset --> Promise) {
 		my $result = Promise.new;
-		my $protocol = Protocol::ExtendedQuery.new(:$result, :$!typemap, :$resultset);
+		my $protocol = Protocol::BindingQuery.new(:$result, :$!typemap, :$resultset);
 
 		my @types = @values.map: { $!typemap.for-type($^value) };
 		my @oids = compress-oids(@types».oid);
@@ -1299,20 +1312,21 @@ class Client {
 		$result;
 	}
 
-	method execute-prepared(PreparedStatement $prepared, @values, :@output-types --> Promise) {
+	method execute-prepared(PreparedStatement $prepared, @values --> Promise) {
 		my $result = Promise.new;
-		my $protocol = Protocol::ExtendedQuery.new(:$result, :$!typemap, :stage(Binding), :resultset($prepared.resultset));
+		my $source = $prepared.output-types ?? ResultSet::Source.new($!typemap, $prepared.output-types, True) !! ResultSet::Source;
+		my $protocol = Protocol::Execute.new(:$result, :$source, :resultset($prepared.resultset));
 
 		my @input-types = $prepared.input-types;
 		my @formats = compress-formats(@input-types».format);
 		my @fields = @input-types Z[&type-encode] @values;
 
-		my @outputs = @output-types.map: { $!typemap.for-type($^value) };
+		my @outputs = $prepared.output-types.map: { $!typemap.for-oid($^field.type) };
 		my @result-formats = compress-formats(@outputs».format);
 
 		self!submit($protocol, [
 			Packet::Bind.new(:name($prepared.name), :@formats, :@fields, :@result-formats),
-			Packet::Describe.new, Packet::Execute.new, Packet::Close.new(:type(Portal)), Packet::Sync.new
+			Packet::Execute.new, Packet::Close.new(:type(Portal)), Packet::Sync.new
 		]);
 		$result;
 	}
