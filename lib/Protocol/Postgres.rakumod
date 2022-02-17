@@ -1017,13 +1017,15 @@ my class Protocol::Query does Protocol {
 	}
 }
 
-my enum Stage (:Parsing<parse>, :Binding<bind>, :Describing<describe>, :Executing<execute>, :Closing<close>, :Syncing<sync>);
+my enum Stage (:Parsing<parse>, :Binding<bind>, :Describing<describe>, :Executing<execute>, :CopyingFrom('copy from'), :CopyingTo('copying to'), :Closing<close>, :Syncing<sync>);
 
 my role Protocol::ExtendedQuery does Protocol {
 	has Promise:D $.result is required;
 	has ResultSet::Source $.source;
 	has Stage:D $.stage = Parsing;
 	has ResultSet:U $.resultset is required;
+	has Supplier $!copy-from;
+	has &.send-message is required;
 	multi method incoming-message(Packet::DataRow $ (:@values)) {
 		$!source.add-row(@values);
 	}
@@ -1033,6 +1035,41 @@ my role Protocol::ExtendedQuery does Protocol {
 	multi method incoming-message(Packet::EmptyQueryResponse $) {
 		$!stage = Closing;
 		$!result.keep('EMPTY');
+	}
+	multi method incoming-message(Packet::CopyInResponse $ (:$format, :@row-formats)) {
+		$!stage = CopyingTo;
+		my $supplier = Supplier.new;
+		sub tap($row) {
+			&!send-message(Packet::CopyData.new(:$row));
+		}
+		sub done() {
+			&!send-message(Packet::CopyDone.new);
+			&!send-message(Packet::Sync.new);
+		}
+		sub quit($reason) {
+			&!send-message(Packet::CopyFail.new(~$reason));
+			&!send-message(Packet::Sync.new);
+		}
+		my $supply = $supplier.Supply;
+		$supply = $supply.map(*.encode) if $format === Text;
+		$supply.act(&tap, :&done, :&quit);
+		$!result.keep($supplier);
+	}
+	multi method incoming-message(Packet::CopyOutResponse $ (:$format, :@row-formats)) {
+		$!stage = CopyingFrom;
+		$!copy-from = Supplier::Preserving.new;
+		my $supply = $!copy-from.Supply;
+		$supply = $supply.map(*.decode) if $format === Text;
+		$!result.keep($supply);
+	}
+	multi method incoming-message(Packet::CopyData (:$row)) {
+		$!copy-from.emit($row);
+	}
+	multi method incoming-message(Packet::CopyDone $) {
+		$!copy-from.done;
+	}
+	multi method incoming-message(Packet::CopyFail $ (:$reason)) {
+		$!copy-from.quit($reason);
 	}
 	multi method incoming-message(Packet::CommandComplete $ (:$tag)) {
 		$!stage = Closing;
@@ -1284,7 +1321,8 @@ class Client {
 
 	method query(Str $query, **@values, ResultSet:U :$resultset --> Promise) {
 		my $result = Promise.new;
-		my $protocol = Protocol::BindingQuery.new(:$result, :$!typemap, :$resultset);
+		my &send-message = { self!send($^message) };
+		my $protocol = Protocol::BindingQuery.new(:$result, :$!typemap, :$resultset, :&send-message);
 
 		my @types = @values.map: { $!typemap.for-type($^value) };
 		my @oids = compress-oids(@types».oid);
@@ -1293,7 +1331,7 @@ class Client {
 
 		self!submit($protocol, [
 			Packet::Parse.new(:$query, :@oids), Packet::Bind.new(:@formats, :@fields),
-			Packet::Describe.new, Packet::Execute.new, Packet::Close.new(:type(Prepared)), Packet::Sync.new,
+			Packet::Describe.new, Packet::Execute.new, Packet::Sync.new,
 		]);
 		$result;
 	}
@@ -1312,7 +1350,8 @@ class Client {
 	method execute-prepared(PreparedStatement $prepared, @values --> Promise) {
 		my $result = Promise.new;
 		my $source = $prepared.output-types ?? ResultSet::Source.new($!typemap, $prepared.output-types, True) !! ResultSet::Source;
-		my $protocol = Protocol::Execute.new(:$result, :$source, :resultset($prepared.resultset));
+		my &send-message = { self!send($^message) };
+		my $protocol = Protocol::Execute.new(:$result, :$source, :resultset($prepared.resultset), :&send-message);
 
 		my @input-types = $prepared.input-types;
 		my @formats = compress-formats(@input-types».format);
@@ -1323,7 +1362,7 @@ class Client {
 
 		self!submit($protocol, [
 			Packet::Bind.new(:name($prepared.name), :@formats, :@fields, :@result-formats),
-			Packet::Execute.new, Packet::Close.new(:type(Portal)), Packet::Sync.new
+			Packet::Execute.new, Packet::Sync.new
 		]);
 		$result;
 	}
@@ -1406,7 +1445,7 @@ The resulting promise will finish when the connection is ready for queries.
 
 This will issue a query with the given bind values, and return a promise to the result.
 
-For fetching queries such as C<SELECT> the result will be a C<ResultSet> object, for manipulation (e.g. C<INSERT>) and definition (e.g. C<CREATE>) queries it will result a string describing the change (e.g. C<DELETE 3>).
+For fetching queries such as C<SELECT> the result in the promise will be a C<ResultSet> object, for manipulation (e.g. C<INSERT>) and definition (e.g. C<CREATE>) queries it will result a string describing the change (e.g. C<DELETE 3>). For a C<COPY FROM> query it will C<Supply> with the data stream, and for C<COPY TO> it will be a C<Supplier>.
 
 Both the input types and the output types will be typemapped between Raku types and Postgres types using the typemapper.
 
@@ -1485,10 +1524,6 @@ This is the name of the channel that the notification was sent on
 =head2 message(--> Str)
 
 This is the message of the notification
-
-=head1 Todo
-
-=item1 Implement the copy protocol
 
 =head1 Author
 

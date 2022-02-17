@@ -45,6 +45,19 @@ react {
 				when Str {
 					say $_;
 				}
+				when Supply {
+					for $_.list -> $row {
+						say $row.chomp;
+					}
+				}
+				when Supplier {
+					my $supplier = $_;
+					for lines() -> $line {
+						last if $line eq "";
+						$supplier.emit("$line\n");
+					}
+					$supplier.done;
+				}
 			}
 		}
 	}

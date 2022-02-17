@@ -1,6 +1,7 @@
 Revision history for Protocol-Postgres
 
 {{$NEXT}}
+    - Add support for COPY FROM/TO commands
     - Correctly handle empty queries
     - Rename notification attribute payload to message
     - Only call DESCRIBE once for prepared queries
