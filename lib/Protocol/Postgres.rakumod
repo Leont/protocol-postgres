@@ -1241,7 +1241,7 @@ class Client {
 	method startup(Str:D $user!, Str $database, Str $password --> Promise) {
 		die X::Client.new('Already started') if $!startup-promise or $!protocol;
 		my $authenticator = $password.defined ?? Authenticator::Password.new(:$user, :$password) !! Authenticator::Null.new;
-		my %parameters = :$user;
+		my %parameters = :$user, :DateStyle<ISO>, :client_encoding<UTF8>;
 		%parameters<database> = $database with $database;
 		my &send-message = { self!send($^message) };
 		$!protocol = Protocol::Authenticating.new(:client(self), :$authenticator, :$!startup-promise, :&send-message);
