@@ -419,8 +419,8 @@ package Packet {
 
 	class CommandComplete does Base {
 		method header(--> 67) {}
-		method !schema() { state $ = Schema.new((:command(Str))) }
-		has Str:D $.command is required;
+		method !schema() { state $ = Schema.new((:tag(Str))) }
+		has Str:D $.tag is required;
 	}
 
 	class CopyData does Base {
