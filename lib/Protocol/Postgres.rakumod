@@ -690,15 +690,15 @@ my role Protocol {
 }
 
 role Authenticator {
-	proto method incoming-message(Packet::Authentication $packet, Promise $startup-promise, &send-message) { * }
-	multi method incoming-message(Packet::Authentication $packet, Promise $startup-promise, &send-message) {
-		$startup-promise.break(X::Client.new('Unknown authentication method'));
+	proto method incoming-message(Packet::Authentication $packet, &send-message) { * }
+	multi method incoming-message(Packet::Authentication $packet, &send-message) {
+		die X::Client.new('Unknown authentication method');
 	}
 }
 
 class Authenticator::Null does Authenticator {
-	multi method incoming-message(Packet::Authentication $packet, Promise $startup-promise, &send-message) {
-		$startup-promise.break(X::Client.new('Password required but not given'));
+	multi method incoming-message(Packet::Authentication $packet, &send-message) {
+		die X::Client.new('Password required but not given');
 	}
 }
 
@@ -707,53 +707,38 @@ class Authenticator::Password does Authenticator {
 	has Str:D $.password is required;
 	has $!scram;
 
-	multi method incoming-message(Packet::AuthenticationCleartextPassword $, Promise $startup-promise, &send-message) {
+	multi method incoming-message(Packet::AuthenticationCleartextPassword $, &send-message) {
 		send-message(Packet::PasswordMessage.new(:$!password));
 	}
 
-	multi method incoming-message(Packet::AuthenticationMD5Password $ (:$salt), Promise $startup-promise, &send-message) {
+	multi method incoming-message(Packet::AuthenticationMD5Password $ (:$salt), &send-message) {
 		require OpenSSL::Digest <&md5>;
-		if &md5 {
-			my sub md5-hex(Str $input) { md5($input.encode('latin1')).list».fmt('%02x').join };
-			my $first-hash = md5-hex($!password ~ $!user);
-			my $second-hash = md5-hex($first-hash ~ $salt.decode('latin1'));
-			my $password = 'md5' ~ $second-hash;
-			send-message(Packet::PasswordMessage.new(:$password));
-		} else {
-			$startup-promise.break(X::Client.new('Could not load MD5 module'));
-		}
+		die X::Client.new('Could not load MD5 module') unless &md5;
+		my sub md5-hex(Str $input) { md5($input.encode('latin1')).list».fmt('%02x').join };
+		my $first-hash = md5-hex($!password ~ $!user);
+		my $second-hash = md5-hex($first-hash ~ $salt.decode('latin1'));
+		my $password = 'md5' ~ $second-hash;
+		send-message(Packet::PasswordMessage.new(:$password));
 	}
 
-	multi method incoming-message(Packet::AuthenticationSASL $ (:@mechanisms), Promise $startup-promise, &send-message) {
-		if any(@mechanisms) eq 'SCRAM-SHA-256' {
-			require Auth::SCRAM::Async;
-			my $class = ::('Auth::SCRAM::Async::Client');
-			if $class !=== Any {
-				$!scram = $class.new(:username($!user), :$!password, :digest(::('Auth::SCRAM::Async::SHA256')));
-				my $initial-response = $!scram.first-message.encode;
-				send-message(Packet::SASLInitialResponse.new(:mechanism<SCRAM-SHA-256>, :$initial-response));
-			} else {
-				$startup-promise.break(X::Client.new('Could not load SCRAM module'));
-			}
-		} else {
-			$startup-promise.break(X::Client.new("Client does not support SASL mechanisms: @mechanisms[]"));
-		}
+	multi method incoming-message(Packet::AuthenticationSASL $ (:@mechanisms), &send-message) {
+		die X::Client.new("Client does not support SASL mechanisms: @mechanisms[]") if none(@mechanisms) eq 'SCRAM-SHA-256';
+		require Auth::SCRAM::Async;
+		my $class = ::('Auth::SCRAM::Async::Client');
+		die X::Client.new('Could not load SCRAM module') if $class === Any;
+		$!scram = $class.new(:username($!user), :$!password, :digest(::('Auth::SCRAM::Async::SHA256')));
+		my $initial-response = $!scram.first-message.encode;
+		send-message(Packet::SASLInitialResponse.new(:mechanism<SCRAM-SHA-256>, :$initial-response));
 	}
 
-	multi method incoming-message(Packet::AuthenticationSASLContinue $ (:$server-payload), Promise $startup-promise, &send-message) {
-		try {
-			my $client-payload = $!scram.final-message($server-payload.decode).encode;
-			CATCH { default {
-				$startup-promise.break(X::Client.new("Invalid server message: {.message}"));
-			}}
-			send-message(Packet::SASLResponse.new(:$client-payload));
-		}
+	multi method incoming-message(Packet::AuthenticationSASLContinue $ (:$server-payload), &send-message) {
+		my $client-payload = $!scram.final-message($server-payload.decode).encode;
+		send-message(Packet::SASLResponse.new(:$client-payload));
 	}
 
-	multi method incoming-message(Packet::AuthenticationSASLFinal $ (:$server-payload), Promise $startup-promise, &send-message) {
-		if not try $!scram.validate($server-payload.decode) {
-			my $reason = 'Could not validate final server message: ' ~ ($! // 'did not verify');
-			$startup-promise.break(X::Client.new($reason));
+	multi method incoming-message(Packet::AuthenticationSASLFinal $ (:$server-payload), &send-message) {
+		if not $!scram.validate($server-payload.decode) {
+			die X::Client.new('SCRAM final server message did not verify');
 		}
 	}
 }
@@ -764,11 +749,23 @@ my class Protocol::Authenticating does Protocol {
 	has &.send-message is required;
 
 	multi method incoming-message(Packet::Authentication $authentication) {
-		$!authenticator.incoming-message($authentication, $!startup-promise, &!send-message);
+		$!authenticator.incoming-message($authentication, &!send-message);
+		CATCH {
+			when X::Client {
+				$!startup-promise.break($_);
+			}
+			when Str {
+				$!startup-promise.break(X::Client.new(~$_));
+			}
+		}
 	}
 
-	method finished() { $!startup-promise.keep unless $!startup-promise }
-	method failed(%values) { $!startup-promise.break(X::Server.new('Could not authenticate', %values)) }
+	method finished() {
+		$!startup-promise.keep unless $!startup-promise
+	}
+	method failed(%values) {
+		$!startup-promise.break(X::Server.new('Could not authenticate', %values))
+	}
 }
 
 role Type[Int:D $oid, Any:U $type] {
