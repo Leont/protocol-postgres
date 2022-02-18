@@ -786,19 +786,29 @@ role Type[Int:D $oid, Any:U $type] {
 	method format() { Text }
 
 	method encode-to-text(Any:D $value) { ... }
-	multi method encode(Text, Any:D $value) { self.encode-to-text($value).encode }
+	multi method encode(Text, Any:D $value) {
+		self.encode-to-text($value).encode;
+	}
 	multi method encode(Format, Any:U $value) { Blob }
 	method decode-from-text(Str $string) { ... }
-	multi method decode(Text, Blob:D $blob) { self.decode-from-text($blob.decode) }
-	multi method decode(Format, Blob:U $blob) { self.type-object }
+	multi method decode(Text, Blob:D $blob) {
+		self.decode-from-text($blob.decode);
+	}
+	multi method decode(Format, Blob:U $blob) {
+		self.type-object;
+	}
 }
 sub type-encode(Type $type, Any $value) {
 	$type.encode($type.format, $value);
 }
 
 class Type::Bool does Type[16, Bool] {
-	method encode-to-text(Bool(Any:D) $input) { $input ?? 't' !! 'f' }
-	method decode-from-text(Str:D $string --> Bool) { $string eq 't' }
+	method encode-to-text(Bool(Any:D) $input) {
+		$input ?? 't' !! 'f';
+	}
+	method decode-from-text(Str:D $string --> Bool) {
+		$string eq 't';
+	}
 }
 
 class Type::Blob does Type[17, Blob] {
@@ -817,31 +827,57 @@ class Type::Blob does Type[17, Blob] {
 }
 
 class Type::Int does Type[20, Int] {
-	method encode-to-text(Int(Cool:D) $int) { ~$int }
-	method decode-from-text(Str:D $string --> Int) { $string.Int }
+	method encode-to-text(Int(Cool:D) $int) {
+		~$int;
+	}
+	method decode-from-text(Str:D $string --> Int) {
+		$string.Int;
+	}
 }
 
 class Type::Num does Type[701, Num] {
-	method encode-to-text(Num(Cool:D) $num) { ~$num }
-	method decode-from-text(Str:D $string --> Num) { $string.Num }
+	method encode-to-text(Num(Cool:D) $num) {
+		~$num;
+	}
+	method decode-from-text(Str:D $string --> Num) {
+		$string.Num;
+	}
 }
 
 class Type::Rat does Type[1700, Rat] {
-	method encode-to-text(Rat(Cool:D) $rat) { ~$rat }
-	method decode-from-text(Str:D $string --> Rat) { $string.Rat }
+	method encode-to-text(Rat(Cool:D) $rat) {
+		~$rat;
+	}
+	method decode-from-text(Str:D $string --> Rat) {
+		$string.Rat;
+	}
 }
 
 class Type::Date does Type[1182, Date] {
-	method encode-to-text(Date(Any:D) $date) { ~$date }
-	method decode-from-text(Str:D $string --> Date) { $string.Date }
+	method encode-to-text(Date(Any:D) $date) {
+		~$date;
+	}
+	method decode-from-text(Str:D $string --> Date) {
+		$string.Date;
+	}
 }
 
 class Type::DateTime does Type[1184, DateTime] {
-	my sub to-datetime(Str $string --> DateTime) { $string.subst(' ', 'T').DateTime }
-	multi method encode-to-text(DateTime:D $datetime) { ~$datetime }
-	multi method encode-to-text(Date:D $datetime) { ~$datetime.DateTime }
-	multi method encode-to-text(Str:D $input) { ~to-datetime($input) }
-	method decode-from-text(Str:D $string --> DateTime) { to-datetime($string) }
+	my sub to-datetime(Str $string --> DateTime) {
+		$string.subst(' ', 'T').DateTime;
+	}
+	multi method encode-to-text(DateTime:D $datetime) {
+		~$datetime;
+	}
+	multi method encode-to-text(Date:D $datetime) {
+		~$datetime.DateTime;
+	}
+	multi method encode-to-text(Str:D $input) {
+		~to-datetime($input);
+	}
+	method decode-from-text(Str:D $string --> DateTime) {
+		to-datetime($string);
+	}
 }
 
 role Type::Array { ... }
@@ -857,9 +893,15 @@ my multi encode-array($element, @values) {
 }
 
 class Type::Default does Type[0, Str] {
-	multi method encode-to-text(@input) is default { encode-array(Type::Default, @input) }
-	multi method encode-to-text(Str(Any:D) $input) { $input }
-	method decode-from-text(Str:D $input) { $input }
+	multi method encode-to-text(@input) is default {
+		encode-array(Type::Default, @input);
+	}
+	multi method encode-to-text(Str(Any:D) $input) {
+		$input;
+	}
+	method decode-from-text(Str:D $input) {
+		$input;
+	}
 }
 
 role Type::Array[::Element, Int $oid] does Type[0, Array] {
