@@ -409,7 +409,7 @@ package Packet {
 	class Close does Base {
 		method header(--> 67) {}
 		method !schema() { state $ = Schema.new((:type(RequestType), :name(Str))) }
-		has RequestType:D $.type is required;
+		has RequestType:D $.type = Prepared;
 		has Str:D $.name = '';
 	}
 
@@ -1370,7 +1370,7 @@ class Client {
 	method close-prepared(PreparedStatement $prepared) {
 		my $result = Promise.new;
 		my $protocol = Protocol::Close.new(:$result);
-		self!submit($protocol, [ Packet::Close.new(:name($prepared.name), :type(Prepared)), Packet::Sync.new ]);
+		self!submit($protocol, [ Packet::Close.new(:name($prepared.name)), Packet::Sync.new ]);
 		$result;
 	}
 
