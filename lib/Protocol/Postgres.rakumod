@@ -517,8 +517,9 @@ package Packet {
 
 	class NegotiateProtocolVersion does Base {
 		method header(--> 118) {}
-		method !schema() { state $ = Schema.new((:newest-minor-version(Int))) }
+		method !schema() { state $ = Schema.new((:newest-minor-version(Int), :unknown-options(Array[Str]))) }
 		has Int:D $.newest-minor-version is required;
+		has Str @unknown-options;
 	}
 
 	class NoData does Base {
@@ -1258,8 +1259,11 @@ class Client {
 
 	multi method incoming-message(Packet::AuthenticationOk $) {
 	}
-	multi method incoming-message(Packet::NegotiateProtocolVersion $ (:$newest-minor-version)) {
-		$!startup-promise.break(X::Client.new('Unsupported protocol version ' ~ $newest-minor-version));
+	multi method incoming-message(Packet::NegotiateProtocolVersion $version where $version.unknown-options) {
+		$!startup-promise.break(X::Client.new('Unknown options ' ~ $version.unknown-options.join(', ')));
+	}
+	multi method incoming-message(Packet::NegotiateProtocolVersion $version) {
+		$!startup-promise.break(X::Client.new('Unsupported protocol version ' ~ $version.newest-minor-version));
 	}
 	multi method incoming-message(Packet::BackendKeyData $ (:$process-id, :$secret-key)) {
 		$!process-id = $process-id;
