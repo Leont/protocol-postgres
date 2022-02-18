@@ -693,14 +693,12 @@ role Authenticator {
 	proto method incoming-message(Packet::Authentication $packet, Promise $startup-promise, &send-message) { * }
 	multi method incoming-message(Packet::Authentication $packet, Promise $startup-promise, &send-message) {
 		$startup-promise.break(X::Client.new('Unknown authentication method'));
-		self;
 	}
 }
 
 class Authenticator::Null does Authenticator {
 	multi method incoming-message(Packet::Authentication $packet, Promise $startup-promise, &send-message) {
 		$startup-promise.break(X::Client.new('Password required but not given'));
-		self;
 	}
 }
 
@@ -711,7 +709,6 @@ class Authenticator::Password does Authenticator {
 
 	multi method incoming-message(Packet::AuthenticationCleartextPassword $, Promise $startup-promise, &send-message) {
 		send-message(Packet::PasswordMessage.new(:$!password));
-		self;
 	}
 
 	multi method incoming-message(Packet::AuthenticationMD5Password $ (:$salt), Promise $startup-promise, &send-message) {
@@ -725,7 +722,6 @@ class Authenticator::Password does Authenticator {
 		} else {
 			$startup-promise.break(X::Client.new('Could not load MD5 module'));
 		}
-		self;
 	}
 
 	multi method incoming-message(Packet::AuthenticationSASL $ (:@mechanisms), Promise $startup-promise, &send-message) {
@@ -742,7 +738,6 @@ class Authenticator::Password does Authenticator {
 		} else {
 			$startup-promise.break(X::Client.new("Client does not support SASL mechanisms: @mechanisms[]"));
 		}
-		self;
 	}
 
 	multi method incoming-message(Packet::AuthenticationSASLContinue $ (:$server-payload), Promise $startup-promise, &send-message) {
@@ -753,7 +748,6 @@ class Authenticator::Password does Authenticator {
 			}}
 			send-message(Packet::SASLResponse.new(:$client-payload));
 		}
-		self;
 	}
 
 	multi method incoming-message(Packet::AuthenticationSASLFinal $ (:$server-payload), Promise $startup-promise, &send-message) {
@@ -761,7 +755,6 @@ class Authenticator::Password does Authenticator {
 			my $reason = 'Could not validate final server message: ' ~ ($! // 'did not verify');
 			$startup-promise.break(X::Client.new($reason));
 		}
-		self;
 	}
 }
 
@@ -771,7 +764,7 @@ my class Protocol::Authenticating does Protocol {
 	has &.send-message is required;
 
 	multi method incoming-message(Packet::Authentication $authentication) {
-		$!authenticator = $!authenticator.incoming-message($authentication, $!startup-promise, &!send-message);
+		$!authenticator.incoming-message($authentication, $!startup-promise, &!send-message);
 	}
 
 	method finished() { $!startup-promise.keep unless $!startup-promise }
