@@ -1120,6 +1120,9 @@ class PreparedStatement {
 		die X::Client.new("Wrong number or arguments, got {+@values} expected {+@!input-types}") if @values != @!input-types;
 		$!client.execute-prepared(self, @values, :resultset(self.resultset));
 	}
+	method columns() {
+		@!output-types.map(*.name);
+	}
 	method close(--> Promise) {
 		$!closed = True;
 		$!client.close-prepared(self);
@@ -1504,6 +1507,10 @@ This runs the prepared statement, much like the C<query> method would have done.
 =head2 close()
 
 This closes the prepared statement.
+
+=head2 columns()
+
+This returns the columns of the result once executed.
 
 =head1 Notification
 
