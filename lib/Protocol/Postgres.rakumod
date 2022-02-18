@@ -704,30 +704,10 @@ class Authenticator::Null does Authenticator {
 	}
 }
 
-my class Authenticator::SCRAM does Authenticator {
-	has $.scram is required;
-	multi method incoming-message(Packet::AuthenticationSASLContinue $ (:$server-payload), Promise $startup-promise, &send-message) {
-		try {
-			my $client-payload = $!scram.final-message($server-payload.decode).encode;
-			CATCH { default {
-				$startup-promise.break(X::Client.new("Invalid server message: {.message}"));
-			}}
-			send-message(Packet::SASLResponse.new(:$client-payload));
-		}
-		self;
-	}
-	multi method incoming-message(Packet::AuthenticationSASLFinal $ (:$server-payload), Promise $startup-promise, &send-message) {
-		if not try $!scram.validate($server-payload.decode) {
-			my $reason = 'Could not validate final server message: ' ~ ($! // 'did not verify');
-			$startup-promise.break(X::Client.new($reason));
-		}
-		self;
-	}
-}
-
 class Authenticator::Password does Authenticator {
 	has Str:D $.user is required;
 	has Str:D $.password is required;
+	has $!scram;
 
 	multi method incoming-message(Packet::AuthenticationCleartextPassword $, Promise $startup-promise, &send-message) {
 		send-message(Packet::PasswordMessage.new(:$!password));
@@ -753,15 +733,33 @@ class Authenticator::Password does Authenticator {
 			require Auth::SCRAM::Async;
 			my $class = ::('Auth::SCRAM::Async::Client');
 			if $class !=== Any {
-				my $scram = $class.new(:username($!user), :$!password, :digest(::('Auth::SCRAM::Async::SHA256')));
-				my $initial-response = $scram.first-message.encode;
+				$!scram = $class.new(:username($!user), :$!password, :digest(::('Auth::SCRAM::Async::SHA256')));
+				my $initial-response = $!scram.first-message.encode;
 				send-message(Packet::SASLInitialResponse.new(:mechanism<SCRAM-SHA-256>, :$initial-response));
-				return Authenticator::SCRAM.new(:$scram);
 			} else {
 				$startup-promise.break(X::Client.new('Could not load SCRAM module'));
 			}
 		} else {
 			$startup-promise.break(X::Client.new("Client does not support SASL mechanisms: @mechanisms[]"));
+		}
+		self;
+	}
+
+	multi method incoming-message(Packet::AuthenticationSASLContinue $ (:$server-payload), Promise $startup-promise, &send-message) {
+		try {
+			my $client-payload = $!scram.final-message($server-payload.decode).encode;
+			CATCH { default {
+				$startup-promise.break(X::Client.new("Invalid server message: {.message}"));
+			}}
+			send-message(Packet::SASLResponse.new(:$client-payload));
+		}
+		self;
+	}
+
+	multi method incoming-message(Packet::AuthenticationSASLFinal $ (:$server-payload), Promise $startup-promise, &send-message) {
+		if not try $!scram.validate($server-payload.decode) {
+			my $reason = 'Could not validate final server message: ' ~ ($! // 'did not verify');
+			$startup-promise.break(X::Client.new($reason));
 		}
 		self;
 	}
