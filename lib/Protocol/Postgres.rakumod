@@ -810,12 +810,11 @@ class Type::Blob does Type[17, Blob] {
 		Q{\x} ~ $value.decode('latin1').subst(/./, { .ord.fmt('%02x') }, :g);
 	}
 	multi method decode(Binary, Blob $input) { $input }
+	multi method decode-from-text(Str $string where $string.starts-with(Q{\x})) {
+		$string.substr(2).subst(/<xdigit>**2/, { :16(~$_).chr }, :g).encode('latin1');
+	}
 	multi method decode-from-text(Str $string) {
-		if $string.starts-with(Q{\x}) {
-			$string.substr(2).subst(/<xdigit>**2/, { :16(~$_).chr }, :g).encode('latin1');
-		} else {
-			$string.subst(q{''}, q{'}, :g).subst(Q{\\}, Q{\}, :g).subst(/ \\ (<[0..7]> ** 3) /, -> $/ { :8(~$1).chr }, :g).encode('latin1');
-		}
+		$string.subst(q{''}, q{'}, :g).subst(Q{\\}, Q{\}, :g).subst(/ \\ (<[0..7]> ** 3) /, -> $/ { :8(~$1).chr }, :g).encode('latin1');
 	}
 }
 
@@ -852,12 +851,11 @@ role Type::Array { ... }
 my sub quote-string(Str:D $string) {
 	'"' ~ $string.subst(Q{\}, Q{\\}, :g).subst(/\"/, '\\"', :g) ~ '"';
 }
-my sub encode-array($element, @values) {
-	if $element ~~ Type::Array|Type::Int|Type::Num|Type::Rat {
-		return '{' ~ @values.map({ $element.encode-to-text($^value) }).join(', ') ~ '}';
-	} else {
-		return '{' ~ @values.map({ quote-string($element.encode-to-text($^value)) }).join(', ') ~ '}';
-	}
+my multi encode-array($element where Type::Array|Type::Int|Type::Num|Type::Rat, @values) {
+	'{' ~ @values.map({ $element.encode-to-text($^value) }).join(', ') ~ '}';
+}
+my multi encode-array($element, @values) {
+	'{' ~ @values.map({ quote-string($element.encode-to-text($^value)) }).join(', ') ~ '}';
 }
 
 class Type::Default does Type[0, Str] {
@@ -1305,15 +1303,9 @@ class Client {
 		$supplier.Supply;
 	}
 
-	sub compress-formats(@formats) {
-		if all(@formats) === Text {
-			();
-		} elsif all(@formats) === Binary {
-			(Binary);
-		} else {
-			@formats;
-		}
-	}
+	multi compress-formats(@formats where all(@formats) === Text) is default { () }
+	multi compress-formats(@formats where all(@formats) === Binary) { (Binary) }
+	multi compress-formats(@formats) { @formats }
 
 	sub compress-oids(@oids) {
 		all(@oids) == 0 ?? () !! @oids;
