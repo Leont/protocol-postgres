@@ -439,25 +439,22 @@ package Packet {
 		has Str:D $.reason is required;
 	}
 
-	class CopyInResponse does Base {
+	role CopyResponse does Base {
+		method !schema() { state $ = Schema.new((:format(Enum[Format, Int8]), :row-formats(Array[Format]))) }
+		has Format:D $.format = Text;
+		has Int @.row-formats = ();
+	}
+
+	class CopyInResponse does CopyResponse {
 		method header(--> 71) {}
-		method !schema() { state $ = Schema.new((:format(Enum[Format, Int8]), :row-formats(Array[Format]))) }
-		has Format:D $.format = Text;
-		has Int @.row-formats = ();
 	}
 
-	class CopyOutResponse does Base {
+	class CopyOutResponse does CopyResponse {
 		method header(--> 72) {}
-		method !schema() { state $ = Schema.new((:format(Enum[Format, Int8]), :row-formats(Array[Format]))) }
-		has Format:D $.format = Text;
-		has Int @.row-formats = ();
 	}
 
-	class CopyBothResponse does Base {
+	class CopyBothResponse does CopyResponse {
 		method header(--> 87) {}
-		method !schema() { state $ = Schema.new((:format(Enum[Format, Int8]), :row-formats(Array[Format]))) }
-		has Format:D $.format = Text;
-		has Int @.row-formats = ();
 	}
 
 	class DataRow does Base {
