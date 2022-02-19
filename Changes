@@ -1,6 +1,8 @@
 Revision history for Protocol-Postgres
 
 {{$NEXT}}
+
+0.0.3  2022-02-19T16:18:30+01:00
     - Add support for COPY FROM/TO commands
     - Correctly handle empty queries
     - Rename notification attribute payload to message

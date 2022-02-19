@@ -68,7 +68,7 @@ query($query, @bind-values --> Promise)
 
 This will issue a query with the given bind values, and return a promise to the result.
 
-For fetching queries such as `SELECT` the result will be a `ResultSet` object, for manipulation (e.g. `INSERT`) and definition (e.g. `CREATE`) queries it will result in the value `True`.
+For fetching queries such as `SELECT` the result in the promise will be a `ResultSet` object, for manipulation (e.g. `INSERT`) and definition (e.g. `CREATE`) queries it will result a string describing the change (e.g. `DELETE 3`). For a `COPY FROM` query it will `Supply` with the data stream, and for `COPY TO` it will be a `Supplier`.
 
 Both the input types and the output types will be typemapped between Raku types and Postgres types using the typemapper.
 
@@ -96,6 +96,11 @@ notifications(--> Supply[Notification])
 ---------------------------------------
 
 This returns a supply with all notifications that the current connection is subscribed to. Channels can be subscribed using the `LISTEN` command, and messages can be sent using the `NOTIFY` command.
+
+disconnected(--> Promise)
+-------------------------
+
+This returns a `Promise` that must be be kept or broken to signal the connection is lost.
 
 process-id(--> Int)
 -------------------
@@ -142,6 +147,11 @@ close()
 
 This closes the prepared statement.
 
+columns()
+---------
+
+This returns the columns of the result once executed.
+
 Notification
 ============
 
@@ -157,15 +167,10 @@ channel(--> Str)
 
 This is the name of the channel that the notification was sent on
 
-payload(--> Str)
+message(--> Str)
 ----------------
 
-This is the payload of the notification
-
-Todo
-====
-
-  * Implement the copy protocol
+This is the message of the notification
 
 Author
 ======
