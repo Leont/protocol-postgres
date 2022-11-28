@@ -48,42 +48,42 @@ class DecodeBuffer {
 	has Blob:D $.buffer is required;
 	has Int $!pos = 0;
 
-	method !assert-more-bytes(Int $count) {
-		die X::Client.new('Incomplete packet') if $!pos + $count > $!buffer.elems;
+	method !assert-more-bytes(Int $count, Str $type) {
+		die X::Client.new("Incomplete packet, couldn't read $type") if $!pos + $count > $!buffer.elems;
 	}
 
 	method read-int32() {
-		self!assert-more-bytes(4);
+		self!assert-more-bytes(4, 'int32');
 		my $result = $!buffer.read-int32($!pos, BigEndian);
 		$!pos += 4;
 		$result;
 	}
 	method read-int16() {
-		self!assert-more-bytes(2);
+		self!assert-more-bytes(2, 'int16');
 		my $result = $!buffer.read-int16($!pos, BigEndian);
 		$!pos += 2;
 		$result;
 	}
 	method read-int8() {
-		self!assert-more-bytes(1);
+		self!assert-more-bytes(1, 'int8');
 		my $result = $!buffer.read-int8($!pos++);
 		$result;
 	}
 	method peek-int8() {
-		self!assert-more-bytes(1);
+		self!assert-more-bytes(1, 'int8');
 		$!buffer.read-uint8($!pos);
 	}
 	method read-string() {
 		my $current = $!pos;
 		my $end = $!buffer.elems;
 		$current++ while $current < $end and $!buffer[$current] != 0;
-		die X::Client.new('Incomplete packet') if $current == $end;
+		self!assert-more-bytes($current - $!pos + 1, 'string');
 		my $result = $!buffer.subbuf($!pos, $current - $!pos);
 		$!pos = $current + 1;
 		$result.decode;
 	}
 	method read-buffer(Int $length) {
-		self!assert-more-bytes($length);
+		self!assert-more-bytes($length, 'buffer');
 		my $result = $!buffer.subbuf($!pos, $length);
 		$!pos += $length;
 		$result;
@@ -631,7 +631,7 @@ package Packet {
 		has Buf:D $!buffer is required;
 		has Callable %!decoder-for;
 
-		submethod BUILD(Blob :$buffer, Side :$type = Front) {
+		submethod BUILD(Blob :$buffer, Side :$type = Side::Front) {
 			$!buffer = Buf.new($buffer // ());
 			%!decoder-for = $type === Front ?? %front-decoder !! %back-decoder;
 		}
@@ -753,12 +753,8 @@ my class Protocol::Authenticating does Protocol {
 			&!send-message($packet);
 		}
 		CATCH {
-			when X::Client {
-				$!startup-promise.break($_);
-			}
-			when Str {
-				$!startup-promise.break(X::Client.new(~$_));
-			}
+			when X::Client { $!startup-promise.break($_) }
+			when Str { $!startup-promise.break(X::Client.new(~$_)) }
 		}
 	}
 
