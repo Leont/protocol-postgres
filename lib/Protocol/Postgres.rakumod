@@ -1169,7 +1169,7 @@ class PreparedStatement {
 	has FieldDescription @.output-types is required;
 	has Bool $!closed = False;
 	method resultset() { ResultSet }
-	method execute(**@values) {
+	method execute(@values?) {
 		die X::Client.new('Prepared statement already closed') if $!closed;
 		die X::Client.new("Wrong number or arguments, got {+@values} expected {+@!input-types}") if @values != @!input-types;
 		$!client.execute-prepared(self, @values, :resultset(self.resultset));
@@ -1372,7 +1372,7 @@ class Client {
 		all(@oids) == 0 ?? () !! @oids;
 	}
 
-	method query(Str $query, **@values, ResultSet:U :$resultset --> Promise) {
+	method query(Str $query, @values?, ResultSet:U :$resultset --> Promise) {
 		my $result = Promise.new;
 		my &send-message = { self!send($^message) };
 		my $protocol = Protocol::BindingQuery.new(:$result, :$!typemap, :$resultset, :&send-message);
@@ -1453,7 +1453,7 @@ $client.outbound-data.act({ $socket.write($^data) });
 
 await $client.startup($user, $database, $password);
 
-my $resultset = await $client.query('SELECT * FROM foo WHERE id = $1', 42);
+my $resultset = await $client.query('SELECT * FROM foo WHERE id = $1', [ 42 ]);
 react {
 	whenever $resultset.hash-rows -> (:$name, :$description, :$id) {
 		say "$name is $description";
