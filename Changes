@@ -1,6 +1,7 @@
 Revision history for Protocol-Postgres
 
 {{$NEXT}}
+    - Work around multidispatcher + conversion type rakudo issue
 
 0.0.3  2022-02-19T16:18:30+01:00
     - Add support for COPY FROM/TO commands
