@@ -882,7 +882,7 @@ class Type::Default does Type[0, Str] {
 	multi method encode-to-text(@input) is default {
 		encode-array(Type::Default, @input);
 	}
-	multi method encode-to-text(Str(Any:D) $input) {
+	multi method encode-to-text(Str:D(Any) $input) {
 		$input;
 	}
 	method decode-from-text(Str:D $input) {
