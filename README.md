@@ -21,7 +21,7 @@ await $client.startup($user, $database, $password);
 
 my $resultset = await $client.query('SELECT * FROM foo WHERE id = $1', 42);
 react {
-	whenever $resultset.hash-rows -> (:$name, :$description) {
+	whenever $resultset.hash-rows -> (:$name, :$description, :$id) {
 		say "$name is $description";
 	}
 }
