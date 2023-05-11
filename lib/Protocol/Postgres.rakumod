@@ -782,10 +782,21 @@ class Type::DateTime does Type[1184, DateTime] {
 	}
 }
 
+class JSON {
+	has $.value is required;
+
+	method new(Any $value) {
+		self.bless(:$value);
+	}
+}
+
 class Type::JSON does Type[114, Any] {
 	use JSON::Fast;
 
-	method encode-to-text(Any:D $data) {
+	multi method encode-to-text(JSON:D $json) {
+		return to-json($json.value);
+	}
+	multi method encode-to-text(Any $data) {
 		return to-json($data);
 	}
 	method decode-from-text(Str:D $string) {
@@ -878,6 +889,7 @@ class TypeMap::Standard does TypeMap {
 	multi method for-type(Bool) { Type::Bool }
 	multi method for-type(Int) { Type::Int }
 	multi method for-type(Num) { Type::Num }
+	multi method for-type(JSON) { Type::JSON }
 	multi method for-type(DateTime) { Type::DateTime }
 	multi method for-type(Date) { Type::Date }
 	multi method for-type(Rat) { Type::Rat }
@@ -1494,9 +1506,9 @@ Both the input types and the output types will be typemapped between Raku types 
 
 This will issue a complex query that may contain multiple statements, but can not use bind values. It will return a C<Supply> to the results of each query.
 
-=head2 prepare($query --> Promise[PreparedStatement])
+=head2 prepare($query, :@input-types --> Promise[PreparedStatement])
 
-This prepares the query, and returns a Promise to the PreparedStatement object.
+This prepares the query, and returns a Promise to the PreparedStatement object. C<@input-types> can be used to pass on hints about the types you're passing in during C<execute>.
 
 =head2 startTls(--> Blob)
 
