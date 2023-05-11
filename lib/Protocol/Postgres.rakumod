@@ -856,6 +856,11 @@ role TypeMap {
 	method for-oid(Int --> Type) { ... }
 }
 
+class TypeMap::Stringy does TypeMap {
+	method for-type(Any --> Type) { Type::Default }
+	method for-oid(Int --> Type) { Type::Default }
+}
+
 class TypeMap::Standard does TypeMap {
 	multi method for-type(Cool) { Type::Default }
 	multi method for-type(Blob) { Type::Blob }
@@ -1448,7 +1453,7 @@ This creates a new postgres client. It supports one optional named argument:
 =begin item1
 TypeMap :$typemap = TypeMap::Standard
 
-This is the typemap that is used to translate between Raku's and Postgres' typesystem. The default mapping supports common built-in types such as strings, numbers, bools, dates, datetimes and blobs.
+This is the typemap that is used to translate between Raku's and Postgres' typesystem. The default mapping supports common built-in types such as strings, numbers, bools, dates, datetimes and blobs. C<TypeMap::Stringy> is also available if one wants all values to map to strings.
 =end item1
 
 =head2 outgoing-data(--> Supply)
