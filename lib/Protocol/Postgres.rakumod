@@ -940,7 +940,7 @@ role TypeMap {
 	method for-oid(Int --> Type) { ... }
 }
 
-class TypeMap::Simple does TypeMap {
+class TypeMap::Standard does TypeMap {
 	multi method for-type(Cool) { Type::Default }
 	multi method for-type(Blob) { Type::Blob }
 	multi method for-type(Bool) { Type::Bool }
@@ -1218,7 +1218,7 @@ class Client {
 	has Packet::Decoder $!decoder = Packet::Decoder.new;
 	has Int $!prepare-counter = 0;
 	has Promise:D $.disconnected is built(False) = Promise.new;
-	has TypeMap $.typemap = TypeMap::Simple;
+	has TypeMap $.typemap = TypeMap::Standard;
 	submethod TWEAK() {
 		$!disconnected.then: {
 			my $message = $!disconnected ~~ Broken ?? ~$!disconnected.cause !! 'Disconnected';
@@ -1446,7 +1446,7 @@ C<Protocol::Postgres::Client> has the following methods
 This creates a new postgres client. It supports one optional named argument:
 
 =begin item1
-TypeMap :$typemap = TypeMap::Simple
+TypeMap :$typemap = TypeMap::Standard
 
 This is the typemap that is used to translate between Raku's and Postgres' typesystem. The default mapping supports common built-in types such as strings, numbers, bools, dates, datetimes and blobs.
 =end item1
