@@ -3,6 +3,7 @@ Revision history for Protocol-Postgres
 {{$NEXT}}
     - Rename TypeMap::Simple to TypeMap::Standard
     - Add TypeMap::Stringy
+    - Add Type::JSON
 
 0.0.4  2023-01-05T14:26:11+01:00
     - Work around multidispatcher + conversion type rakudo issue

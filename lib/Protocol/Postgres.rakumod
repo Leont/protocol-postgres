@@ -782,6 +782,17 @@ class Type::DateTime does Type[1184, DateTime] {
 	}
 }
 
+class Type::JSON does Type[114, Any] {
+	use JSON::Fast;
+
+	method encode-to-text(Any:D $data) {
+		return to-json($data);
+	}
+	method decode-from-text(Str:D $string) {
+		return from-json($string);
+	}
+}
+
 role Type::Array { ... }
 
 my sub quote-string(Str:D $string) {
@@ -882,6 +893,7 @@ class TypeMap::Standard does TypeMap {
 	multi method for-oid(16) { Type::Bool }
 	multi method for-oid(17) { Type::Blob }
 	multi method for-oid(Int $ where 20|21|23|26) { Type::Int }
+	multi method for-oid(Int $ where 114|3802) { Type::JSON }
 	multi method for-oid(Int $ where 700|701) { Type::Num }
 	multi method for-oid(1082) { Type::Date }
 	multi method for-oid(Int $ where 1114|1184) { Type::DateTime }
