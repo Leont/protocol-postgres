@@ -7,6 +7,7 @@
   ],
   "depends": [
     "Auth::SCRAM::Async",
+    "JSON::Fast",
     "OpenSSL"
   ],
   "description": "A sans-io postgresql client",

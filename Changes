@@ -1,6 +1,7 @@
 Revision history for Protocol-Postgres
 
 {{$NEXT}}
+    - Add missing JSON::Fast dependency
 
 0.0.5  2023-05-12T13:55:08+02:00
     - Rename TypeMap::Simple to TypeMap::Standard
