@@ -4,7 +4,7 @@ use v6.d;
 
 use Protocol::Postgres;
 
-unit sub MAIN(Str :$user = ~$*USER, Str :$database = 'test', Str :$password, :$host = 'localhost', :$port = 5432);
+unit sub MAIN(Str :$user = ~$*USER, Str :$database = $user, Str :$password, :$host = 'localhost', :$port = 5432);
 
 my $socket = await IO::Socket::Async.connect($host, $port);
 my $client = Protocol::Postgres::Client.new;
