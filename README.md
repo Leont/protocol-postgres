@@ -117,6 +117,11 @@ disconnected(--> Promise)
 
 This returns a `Promise` that must be be kept or broken to signal the connection is lost.
 
+query-status(--> Protocol::Postgres::QueryStatus)
+-------------------------------------------------
+
+This returns the query status as of the last finished query as a `enum Protocol::Postgres::QueryStatus` value: `Idle` (No transaction is active), `Transaction` (A transaction is currently in progress) or `Error` (The current transaction has failed and needs to be rolled back).
+
 process-id(--> Int)
 -------------------
 

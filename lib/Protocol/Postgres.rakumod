@@ -1465,6 +1465,7 @@ our sub default-typemap() {
 
 class Client {
 	has Protocol $!protocol;
+	has QueryStatus $.query-status is built(False) = QueryStatus::Idle;
 	has Promise $!startup-promise = Promise.new;
 	has Supplier $!outbound-messages handles(:outbound-messages<Supply>) = Supplier.new;
 	has Supply $!outbound-data;
@@ -1558,8 +1559,9 @@ class Client {
 	multi method incoming-message(Packet::ErrorResponse $error) {
 		$!protocol.failed-server($error.values) with $!protocol;
 	}
-	multi method incoming-message(Packet::ReadyForQuery $) {
+	multi method incoming-message(Packet::ReadyForQuery $ready) {
 		$!protocol.finished;
+		$!query-status = $ready.status;
 		self!handle-next;
 	}
 	multi method incoming-message(Packet::Base $packet) {
@@ -1776,6 +1778,10 @@ This sends a message to the server to terminate the connection
 =head2 disconnected(--> Promise)
 
 This returns a C<Promise> that must be be kept or broken to signal the connection is lost.
+
+=head2 query-status(--> Protocol::Postgres::QueryStatus)
+
+This returns the query status as of the last finished query as a C<enum Protocol::Postgres::QueryStatus> value: C<Idle> (No transaction is active), C<Transaction> (A transaction is currently in progress) or C<Error> (The current transaction has failed and needs to be rolled back).
 
 =head2 process-id(--> Int)
 
