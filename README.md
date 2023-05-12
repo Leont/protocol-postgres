@@ -77,10 +77,10 @@ query-multiple($query --> Supply[ResultSet])
 
 This will issue a complex query that may contain multiple statements, but can not use bind values. It will return a `Supply` to the results of each query.
 
-prepare($query --> Promise[PreparedStatement])
-----------------------------------------------
+prepare($query, :@input-types --> Promise[PreparedStatement])
+-------------------------------------------------------------
 
-This prepares the query, and returns a Promise to the PreparedStatement object.
+This prepares the query, and returns a Promise to the PreparedStatement object. `@input-types` can be used to pass on hints about the types you're passing in during `execute`.
 
 startTls(--> Blob)
 ------------------
