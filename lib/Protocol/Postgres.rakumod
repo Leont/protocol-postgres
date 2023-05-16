@@ -782,20 +782,9 @@ class Type::DateTime does Type[1184, DateTime] {
 	}
 }
 
-class JSON {
-	has $.value is required;
-
-	method new(Any $value) {
-		self.bless(:$value);
-	}
-}
-
 class Type::JSON does Type[114, Any] {
 	use JSON::Fast;
 
-	multi method encode-to-text(JSON:D $json) {
-		return to-json($json.value);
-	}
 	multi method encode-to-text(Any $data) {
 		return to-json($data);
 	}
@@ -883,33 +872,25 @@ class TypeMap::Stringy does TypeMap {
 	method for-oid(Int --> Type) { Type::Default }
 }
 
-class TypeMap::Standard does TypeMap {
+role TypeMap::Core does TypeMap {
 	multi method for-type(Cool) { Type::Default }
 	multi method for-type(Blob) { Type::Blob }
 	multi method for-type(Bool) { Type::Bool }
 	multi method for-type(Int) { Type::Int }
 	multi method for-type(Num) { Type::Num }
-	multi method for-type(JSON) { Type::JSON }
 	multi method for-type(DateTime) { Type::DateTime }
 	multi method for-type(Date) { Type::Date }
 	multi method for-type(Rat) { Type::Rat }
-	multi method for-type(Array $array) { Type::Array[Type::Default, 1009] }
-	multi method for-type(Array[Bool] $array) { Type::Array[Type::Bool, 1000] }
-	multi method for-type(Array[Blob] $array) { Type::Array[Type::Blob, 1001] }
-	multi method for-type(Array[Int] $array) { Type::Array[Type::Int, 1016] }
-	multi method for-type(Array[Num] $array) { Type::Array[Type::Num, 1022] }
-	multi method for-type(Array[Date] $array) { Type::Array[Type::Date, 1082] }
-	multi method for-type(Array[DateTime] $array) { Type::Array[Type::DateTime, 1085] }
 
 	multi method for-oid(Int) { Type::Default }
 	multi method for-oid(16) { Type::Bool }
 	multi method for-oid(17) { Type::Blob }
 	multi method for-oid(Int $ where 20|21|23|26) { Type::Int }
-	multi method for-oid(Int $ where 114|3802) { Type::JSON }
 	multi method for-oid(Int $ where 700|701) { Type::Num }
 	multi method for-oid(1082) { Type::Date }
 	multi method for-oid(Int $ where 1114|1184) { Type::DateTime }
 	multi method for-oid(1700) { Type::Rat }
+
 	multi method for-oid(1000) { Type::Array[Type::Bool, 1000] }
 	multi method for-oid(1001) { Type::Array[Type::Blob, 1001] }
 	multi method for-oid(Int $ where 1002|1003|1009|1014|1015) { Type::Array[Type::Default, 1009] }
@@ -918,6 +899,22 @@ class TypeMap::Standard does TypeMap {
 	multi method for-oid(1182) { Type::Array[Type::Date, 1182] }
 	multi method for-oid(Int $ where 1115|1185) { Type::Array[Type::DateTime, 1185] }
 	multi method for-oid(1231) { Type::Array[Type::Rat, 1231] }
+	multi method for-oid(Int $ where 114|3802) { Type::JSON }
+}
+
+class TypeMap::Native does TypeMap::Core {
+	multi method for-type(Array $array) { Type::Array[Type::Default, 1009] }
+	multi method for-type(Array[Bool] $array) { Type::Array[Type::Bool, 1000] }
+	multi method for-type(Array[Blob] $array) { Type::Array[Type::Blob, 1001] }
+	multi method for-type(Array[Int] $array) { Type::Array[Type::Int, 1016] }
+	multi method for-type(Array[Num] $array) { Type::Array[Type::Num, 1022] }
+	multi method for-type(Array[Date] $array) { Type::Array[Type::Date, 1082] }
+	multi method for-type(Array[DateTime] $array) { Type::Array[Type::DateTime, 1085] }
+}
+
+class TypeMap::JSON does TypeMap::Core {
+	multi method for-type(List) { Type::JSON }
+	multi method for-type(Map) { Type::JSON }
 }
 
 my role Protocol {
@@ -1247,7 +1244,7 @@ class Client {
 	has Packet::Decoder $!decoder = Packet::Decoder.new;
 	has Int $!prepare-counter = 0;
 	has Promise:D $.disconnected is built(False) = Promise.new;
-	has TypeMap $.typemap = TypeMap::Standard;
+	has TypeMap $.typemap = TypeMap::JSON;
 	submethod TWEAK() {
 		$!disconnected.then: {
 			my $message = $!disconnected ~~ Broken ?? ~$!disconnected.cause !! 'Disconnected';
@@ -1475,9 +1472,10 @@ C<Protocol::Postgres::Client> has the following methods
 This creates a new postgres client. It supports one optional named argument:
 
 =begin item1
-TypeMap :$typemap = TypeMap::Standard
+TypeMap :$typemap = TypeMap::JSON
 
-This is the typemap that is used to translate between Raku's and Postgres' typesystem. The default mapping supports common built-in types such as strings, numbers, bools, dates, datetimes and blobs. C<TypeMap::Stringy> is also available if one wants all values to map to strings.
+This is the typemap that is used to translate between Raku's and Postgres' typesystem. The default mapping supports common built-in types such as strings, numbers, bools, dates, datetimes, blobs, arrays and hashes. Other options include C<TypeMap::Native> if you want arrays to map to postgres' native arrays and C<TypeMap::Stringy> if one wants all values to map to strings.
+
 =end item1
 
 =head2 outgoing-data(--> Supply)
