@@ -44,7 +44,7 @@ This creates a new postgres client. It supports one optional named argument:
 
   * TypeMap :$typemap = TypeMap::JSON
 
-    This is the typemap that is used to translate between Raku's and Postgres' typesystem. The default mapping supports common built-in types such as strings, numbers, bools, dates, datetimes, blobs, arrays and hashes. Other options include `TypeMap::Native` if you want arrays to map to postgres' native arrays and `TypeMap::Stringy` if one wants all values to map to strings.
+    This is the typemap that is used to translate between Raku's and Postgres' typesystem. The default mapping supports common built-in types such as strings, numbers, bools, dates, datetimes, blobs, arrays and hashes. Other options include `TypeMap::Native` if you want arrays to map to postgres' native arrays and `TypeMap::Minimal` if one wants all values to map to strings.
 
 outgoing-data(--> Supply)
 -------------------------

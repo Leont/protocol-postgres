@@ -805,11 +805,8 @@ my multi encode-array($element, @values) {
 	'{' ~ @values.map({ quote-string($element.encode-to-text($^value)) }).join(', ') ~ '}';
 }
 
-class Type::Default does Type[0, Str] {
-	multi method encode-to-text(@input) is default {
-		encode-array(Type::Default, @input);
-	}
-	multi method encode-to-text(Str:D(Any) $input) {
+class Type::Str does Type[0, Str] {
+	method encode-to-text(Str:D(Any) $input) {
 		$input;
 	}
 	method decode-from-text(Str:D $input) {
@@ -867,13 +864,13 @@ role TypeMap {
 	method for-oid(Int --> Type) { ... }
 }
 
-class TypeMap::Stringy does TypeMap {
-	method for-type(Any --> Type) { Type::Default }
-	method for-oid(Int --> Type) { Type::Default }
+class TypeMap::Minimal does TypeMap {
+	method for-type(Any --> Type) { Type::Str }
+	method for-oid(Int --> Type) { Type::Str }
 }
 
 role TypeMap::Core does TypeMap {
-	multi method for-type(Cool) { Type::Default }
+	multi method for-type(Cool) { Type::Str }
 	multi method for-type(Blob) { Type::Blob }
 	multi method for-type(Bool) { Type::Bool }
 	multi method for-type(Int) { Type::Int }
@@ -882,7 +879,7 @@ role TypeMap::Core does TypeMap {
 	multi method for-type(Date) { Type::Date }
 	multi method for-type(Rat) { Type::Rat }
 
-	multi method for-oid(Int) { Type::Default }
+	multi method for-oid(Int) { Type::Str }
 	multi method for-oid(16) { Type::Bool }
 	multi method for-oid(17) { Type::Blob }
 	multi method for-oid(Int $ where 20|21|23|26) { Type::Int }
@@ -893,7 +890,7 @@ role TypeMap::Core does TypeMap {
 
 	multi method for-oid(1000) { Type::Array[Type::Bool, 1000] }
 	multi method for-oid(1001) { Type::Array[Type::Blob, 1001] }
-	multi method for-oid(Int $ where 1002|1003|1009|1014|1015) { Type::Array[Type::Default, 1009] }
+	multi method for-oid(Int $ where 1002|1003|1009|1014|1015) { Type::Array[Type::Str, 1009] }
 	multi method for-oid(Int $ where 1005|1007|1016|1028) { Type::Array[Type::Int, 1016] }
 	multi method for-oid(Int $ where 1021|1022) { Type::Array[Type::Num, 1022] }
 	multi method for-oid(1182) { Type::Array[Type::Date, 1182] }
@@ -903,7 +900,7 @@ role TypeMap::Core does TypeMap {
 }
 
 class TypeMap::Native does TypeMap::Core {
-	multi method for-type(Array $array) { Type::Array[Type::Default, 1009] }
+	multi method for-type(Array $array) { Type::Array[Type::Str, 1009] }
 	multi method for-type(Array[Bool] $array) { Type::Array[Type::Bool, 1000] }
 	multi method for-type(Array[Blob] $array) { Type::Array[Type::Blob, 1001] }
 	multi method for-type(Array[Int] $array) { Type::Array[Type::Int, 1016] }
@@ -1474,7 +1471,7 @@ This creates a new postgres client. It supports one optional named argument:
 =begin item1
 TypeMap :$typemap = TypeMap::JSON
 
-This is the typemap that is used to translate between Raku's and Postgres' typesystem. The default mapping supports common built-in types such as strings, numbers, bools, dates, datetimes, blobs, arrays and hashes. Other options include C<TypeMap::Native> if you want arrays to map to postgres' native arrays and C<TypeMap::Stringy> if one wants all values to map to strings.
+This is the typemap that is used to translate between Raku's and Postgres' typesystem. The default mapping supports common built-in types such as strings, numbers, bools, dates, datetimes, blobs, arrays and hashes. Other options include C<TypeMap::Native> if you want arrays to map to postgres' native arrays and C<TypeMap::Minimal> if one wants all values to map to strings.
 
 =end item1
 
