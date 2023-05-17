@@ -943,17 +943,18 @@ class Authenticator::Password does Authenticator {
 		Packet::PasswordMessage.new(:$!password);
 	}
 
-	multi method incoming-message(Packet::AuthenticationMD5Password $ (:$salt)) {
+	multi method incoming-message(Packet::AuthenticationMD5Password $packet) {
 		require OpenSSL::Digest <&md5>;
 		die X::Client.new('Could not load MD5 module') unless &md5;
 		my sub md5-hex(Str $input) { md5($input.encode('latin1')).list».fmt('%02x').join };
 		my $first-hash = md5-hex($!password ~ $!user);
-		my $second-hash = md5-hex($first-hash ~ $salt.decode('latin1'));
+		my $second-hash = md5-hex($first-hash ~ $packet.salt.decode('latin1'));
 		my $password = 'md5' ~ $second-hash;
 		Packet::PasswordMessage.new(:$password);
 	}
 
-	multi method incoming-message(Packet::AuthenticationSASL $ (:@mechanisms)) {
+	multi method incoming-message(Packet::AuthenticationSASL $packet) {
+		my @mechanisms = $packet.mechanisms;
 		die X::Client.new("Client does not support SASL mechanisms: @mechanisms[]") if none(@mechanisms) eq 'SCRAM-SHA-256';
 		require Auth::SCRAM::Async;
 		my $class = ::('Auth::SCRAM::Async::Client');
@@ -963,13 +964,13 @@ class Authenticator::Password does Authenticator {
 		Packet::SASLInitialResponse.new(:mechanism<SCRAM-SHA-256>, :$initial-response);
 	}
 
-	multi method incoming-message(Packet::AuthenticationSASLContinue $ (:$server-payload)) {
-		my $client-payload = $!scram.final-message($server-payload.decode).encode;
+	multi method incoming-message(Packet::AuthenticationSASLContinue $packet) {
+		my $client-payload = $!scram.final-message($packet.server-payload.decode).encode;
 		Packet::SASLResponse.new(:$client-payload);
 	}
 
-	multi method incoming-message(Packet::AuthenticationSASLFinal $ (:$server-payload)) {
-		if not $!scram.validate($server-payload.decode) {
+	multi method incoming-message(Packet::AuthenticationSASLFinal $packet) {
+		if not $!scram.validate($packet.server-payload.decode) {
 			die X::Client.new('SCRAM final server message did not verify');
 		}
 	}
@@ -1044,12 +1045,12 @@ my class Protocol::Query does Protocol {
 	has Supplier:D $.supplier handles(:finished<done>) is required;
 	has ResultSet:U $.resultset is required;
 
-	multi method incoming-message(Packet::RowDescription $ (:@fields)) {
-		$!source = ResultSet::Source.new($!typemap, @fields);
+	multi method incoming-message(Packet::RowDescription $row) {
+		$!source = ResultSet::Source.new($!typemap, $row.fields);
 		$!supplier.emit($!source.resultset(:$!resultset));
 	}
-	multi method incoming-message(Packet::DataRow $ (:@values)) {
-		$!source.add-row(@values);
+	multi method incoming-message(Packet::DataRow $row) {
+		$!source.add-row($row.values);
 	}
 	multi method incoming-message(Packet::EmptyQueryResponse $) {
 		$!source = ResultSet::Source.new($!typemap);
@@ -1073,8 +1074,8 @@ my role Protocol::ExtendedQuery does Protocol {
 	has ResultSet:U $.resultset is required;
 	has Supplier $!copy-from;
 	has &.send-message is required;
-	multi method incoming-message(Packet::DataRow $ (:@values)) {
-		$!source.add-row(@values);
+	multi method incoming-message(Packet::DataRow $row) {
+		$!source.add-row($row.values);
 	}
 	multi method incoming-message(Packet::NoData $) {
 		$!stage = Executing;
@@ -1083,7 +1084,7 @@ my role Protocol::ExtendedQuery does Protocol {
 		$!stage = Closing;
 		$!result.keep('EMPTY');
 	}
-	multi method incoming-message(Packet::CopyInResponse $ (:$format, :@row-formats)) {
+	multi method incoming-message(Packet::CopyInResponse $packet) {
 		$!stage = CopyingTo;
 		my $supplier = Supplier.new;
 		sub tap($row) {
@@ -1098,32 +1099,32 @@ my role Protocol::ExtendedQuery does Protocol {
 			&!send-message(Packet::Sync.new);
 		}
 		my $supply = $supplier.Supply;
-		$supply = $supply.map(*.encode) if $format === Text;
+		$supply = $supply.map(*.encode) if $packet.format === Text;
 		$supply.act(&tap, :&done, :&quit);
 		$!result.keep($supplier);
 	}
-	multi method incoming-message(Packet::CopyOutResponse $ (:$format, :@row-formats)) {
+	multi method incoming-message(Packet::CopyOutResponse $packet) {
 		$!stage = CopyingFrom;
 		$!copy-from = Supplier::Preserving.new;
 		my $supply = $!copy-from.Supply;
-		$supply = $supply.map(*.decode) if $format === Text;
+		$supply = $supply.map(*.decode) if $packet.format === Text;
 		$!result.keep($supply);
 	}
-	multi method incoming-message(Packet::CopyData (:$row)) {
-		$!copy-from.emit($row);
+	multi method incoming-message(Packet::CopyData $packet) {
+		$!copy-from.emit($packet.row);
 	}
 	multi method incoming-message(Packet::CopyDone $) {
 		$!copy-from.done;
 	}
-	multi method incoming-message(Packet::CopyFail $ (:$reason)) {
-		$!copy-from.quit($reason);
+	multi method incoming-message(Packet::CopyFail $packet) {
+		$!copy-from.quit($packet.reason);
 	}
-	multi method incoming-message(Packet::CommandComplete $ (:$tag)) {
+	multi method incoming-message(Packet::CommandComplete $packet) {
 		$!stage = Closing;
 		if $!source {
 			$!source.done;
 		} elsif not $!result {
-			$!result.keep($tag);
+			$!result.keep($packet.tag);
 		}
 	}
 	multi method incoming-message(Packet::CloseComplete $) {
@@ -1147,9 +1148,9 @@ my class Protocol::BindingQuery does Protocol::ExtendedQuery {
 	multi method incoming-message(Packet::BindComplete $) {
 		$!stage = Describing;
 	}
-	multi method incoming-message(Packet::RowDescription $ (:@fields)) {
+	multi method incoming-message(Packet::RowDescription $packet) {
 		$!stage = Executing;
-		$!source = ResultSet::Source.new($!typemap, @fields);
+		$!source = ResultSet::Source.new($!typemap, $packet.fields);
 		$!result.keep($!source.resultset($!resultset));
 	}
 }
@@ -1190,13 +1191,13 @@ my class Protocol::Prepare does Protocol {
 
 	multi method incoming-message(Packet::ParseComplete $) {
 	}
-	multi method incoming-message(Packet::RowDescription $ (:@fields)) {
-		@!output-types = @fields;
+	multi method incoming-message(Packet::RowDescription $packet) {
+		@!output-types = $packet.fields;
 	}
 	multi method incoming-message(Packet::NoData $) {
 	}
-	multi method incoming-message(Packet::ParameterDescription $ (:@types)) {
-		@!input-types = @types.map({ $!client.typemap.for-oid($^type) });
+	multi method incoming-message(Packet::ParameterDescription $packet) {
+		@!input-types = $packet.types.map({ $!client.typemap.for-oid($^type) });
 	}
 	method finished() {
 		$!result.keep($!prepared-statement.new(:$!name, :$!client, :@!input-types, :@!output-types));
