@@ -1001,40 +1001,43 @@ my class Protocol::Authenticating does Protocol {
 
 class ResultSet {
 	has Str @.columns is required;
-	has Any:U @.types is required;
 	has Supply $.rows is required;
 
 	method hash-rows() {
 		$!rows.map(-> @row { hash @!columns Z=> @row });
 	}
 
-	class Source {
-		my class Column {
-			has Str:D $.name is required;
-			has Format:D $.format is required;
-			has Type $.type is required;
-			method new(FieldDescription:D $field, TypeMap $typemap, Bool $override) {
-				my $type = $typemap.for-oid($field.type);
-				my $format = $override ?? $type.format !! $field.format;
-				self.bless(:name($field.name), :$format, :$type);
+	class Source { ... }
+	class Decoder {
+		has Str @.names;
+		has Type @.types;
+		has Format @.formats;
+
+		method new(TypeMap $typemap, FieldDescription @fields, Bool $override = False) {
+			my @names = @fields».name;
+			my @types = @fields.map: { $typemap.for-oid($^field.type) };
+			my @formats = $override ?? @types».format !! @fields».format;
+			self.bless(:@names, :@types, :@formats);
+		}
+		method decode(@row) {
+			gather for zip(@!formats, @!types, @row) -> ($format, $type, $value) {
+				take $type.decode($format, $value);
 			}
 		}
-		my sub decode(Column $column, Blob $value) {
-			$column.type.decode($column.format, $value).self;
+		method make-source {
+			Source.new(:decoder(self));
 		}
-		has Column @.columns is required;
+	}
+
+	class Source {
+		has Decoder:D $.decoder is required;
 		has Supplier:D $!rows handles<done quit> = Supplier::Preserving.new;
-		method new(TypeMap $typemap, FieldDescription @fields, Bool $override = False) {
-			my @columns = @fields.map: { Column.new($^field, $typemap, $override) };
-			self.bless(:@columns);
-		}
 		method add-row(@row) {
-			$!rows.emit(eager @!columns Z[&decode] @row);
+			$!rows.emit($!decoder.decode(@row));
 		}
 		method resultset(ResultSet:U $resultset) {
-			my @columns = @!columns».name;
-			my @types   = @!columns».type;
-			$resultset.new(:@columns, :@types, :rows($!rows.Supply));
+			my @columns = $!decoder.names;
+			$resultset.new(:@columns, :rows($!rows.Supply));
 		}
 	}
 }
@@ -1046,14 +1049,15 @@ my class Protocol::Query does Protocol {
 	has ResultSet:U $.resultset is required;
 
 	multi method incoming-message(Packet::RowDescription $row) {
-		$!source = ResultSet::Source.new($!typemap, $row.fields);
+		my $decoder = ResultSet::Decoder.new($!typemap, $row.fields);
+		$!source = $decoder.make-source;
 		$!supplier.emit($!source.resultset(:$!resultset));
 	}
 	multi method incoming-message(Packet::DataRow $row) {
 		$!source.add-row($row.values);
 	}
 	multi method incoming-message(Packet::EmptyQueryResponse $) {
-		$!source = ResultSet::Source.new($!typemap);
+		$!source = ResultSet::Decoder.new($!typemap, []).make-source;
 		$!supplier.emit($!source.resultset(:$!resultset));
 	}
 	multi method incoming-message(Packet::CommandComplete $) {
@@ -1150,7 +1154,8 @@ my class Protocol::BindingQuery does Protocol::ExtendedQuery {
 	}
 	multi method incoming-message(Packet::RowDescription $packet) {
 		$!stage = Executing;
-		$!source = ResultSet::Source.new($!typemap, $packet.fields);
+		my $decoder = ResultSet::Decoder.new($!typemap, $packet.fields);
+		$!source = $decoder.make-source;
 		$!result.keep($!source.resultset($!resultset));
 	}
 }
@@ -1397,7 +1402,8 @@ class Client {
 
 	method execute-prepared(PreparedStatement $prepared, @values --> Promise) {
 		my $result = Promise.new;
-		my $source = $prepared.output-types ?? ResultSet::Source.new($!typemap, $prepared.output-types, True) !! ResultSet::Source;
+		my $decoder = ResultSet::Decoder.new($!typemap, $prepared.output-types, True);
+		my $source = $decoder.make-source;
 		my &send-message = { self!send($^message) };
 		my $protocol = Protocol::Execute.new(:$result, :$source, :resultset($prepared.resultset), :&send-message);
 
