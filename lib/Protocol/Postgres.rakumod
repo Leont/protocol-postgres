@@ -1178,6 +1178,7 @@ class PreparedStatement {
 	has Client:D $.client is required;
 	has Str:D $.name is required;
 	has Type @.input-types is required;
+	has Format @.input-formats = compress-formats(@!input-types».format);
 	has ResultSet::Decoder:D $.decoder is required;
 	has Str @.columns is required;
 	has Bool $!closed = False;
@@ -1414,10 +1415,8 @@ class Client {
 		my &send-message = { self!send($^message) };
 		my $protocol = Protocol::Execute.new(:$result, :$source, :resultset($prepared.resultset), :&send-message);
 
-		my @input-types = $prepared.input-types;
-		my @formats = compress-formats(@input-types».format);
-		my @fields = @input-types Z[&type-encode] @values;
-
+		my @formats = $prepared.input-formats;
+		my @fields = $prepared.input-types Z[&type-encode] @values;
 		my @result-formats = $prepared.decoder.compressed-formats;
 
 		self!submit($protocol, [
