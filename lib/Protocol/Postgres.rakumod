@@ -999,6 +999,10 @@ my class Protocol::Authenticating does Protocol {
 	}
 }
 
+multi compress-formats(@formats where all(@formats) === Text) is default { () }
+multi compress-formats(@formats where all(@formats) === Binary) { (Binary) }
+multi compress-formats(@formats) { @formats }
+
 class ResultSet {
 	has Str @.columns is required;
 	has Supply $.rows is required;
@@ -1012,12 +1016,14 @@ class ResultSet {
 		has Str @.names;
 		has Type @.types;
 		has Format @.formats;
+		has Format @.compressed-formats;
 
 		method new(TypeMap $typemap, FieldDescription @fields, Bool $override = False) {
 			my @names = @fields».name;
 			my @types = @fields.map: { $typemap.for-oid($^field.type) };
 			my @formats = $override ?? @types».format !! @fields».format;
-			self.bless(:@names, :@types, :@formats);
+			my @compressed-formats = compress-formats(@formats);
+			self.bless(:@names, :@types, :@formats, :@compressed-formats);
 		}
 		method decode(@row) {
 			gather for zip(@!formats, @!types, @row) -> ($format, $type, $value) {
@@ -1364,10 +1370,6 @@ class Client {
 		$supplier.Supply;
 	}
 
-	multi compress-formats(@formats where all(@formats) === Text) is default { () }
-	multi compress-formats(@formats where all(@formats) === Binary) { (Binary) }
-	multi compress-formats(@formats) { @formats }
-
 	sub compress-oids(@oids) {
 		all(@oids) == 0 ?? () !! @oids;
 	}
@@ -1411,8 +1413,7 @@ class Client {
 		my @formats = compress-formats(@input-types».format);
 		my @fields = @input-types Z[&type-encode] @values;
 
-		my @outputs = $prepared.output-types.map: { $!typemap.for-oid($^field.type) };
-		my @result-formats = compress-formats(@outputs».format);
+		my @result-formats = $decoder.compressed-formats;
 
 		self!submit($protocol, [
 			Packet::Bind.new(:name($prepared.name), :@formats, :@fields, :@result-formats),
