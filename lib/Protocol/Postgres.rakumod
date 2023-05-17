@@ -1178,16 +1178,14 @@ class PreparedStatement {
 	has Client:D $.client is required;
 	has Str:D $.name is required;
 	has Type @.input-types is required;
-	has FieldDescription @.output-types is required;
+	has ResultSet::Decoder:D $.decoder is required;
+	has Str @.columns is required;
 	has Bool $!closed = False;
 	method resultset() { ResultSet }
 	method execute(@values?) {
 		die X::Client.new('Prepared statement already closed') if $!closed;
 		die X::Client.new("Wrong number or arguments, got {+@values} expected {+@!input-types}") if @values != @!input-types;
 		$!client.execute-prepared(self, @values, :resultset(self.resultset));
-	}
-	method columns() {
-		@!output-types.map(*.name);
 	}
 	method close(--> Promise) {
 		$!closed = True;
@@ -1217,7 +1215,9 @@ my class Protocol::Prepare does Protocol {
 		@!input-types = $!client.typemap.for-oids($packet.types);
 	}
 	method finished() {
-		$!result.keep($!prepared-statement.new(:$!name, :$!client, :@!input-types, :@!output-types));
+		my @columns = @!output-types.map(*.name);
+		my $decoder = ResultSet::Decoder.new($!client.typemap, @!output-types, True);
+		$!result.keep($!prepared-statement.new(:$!name, :$!client, :@!input-types, :@columns, :$decoder));
 	}
 	method failed(%values) {
 		$!result.break(X::Server.new('Could not prepare', %values));
@@ -1410,8 +1410,7 @@ class Client {
 
 	method execute-prepared(PreparedStatement $prepared, @values --> Promise) {
 		my $result = Promise.new;
-		my $decoder = ResultSet::Decoder.new($!typemap, $prepared.output-types, True);
-		my $source = $decoder.make-source;
+		my $source = $prepared.decoder.make-source;
 		my &send-message = { self!send($^message) };
 		my $protocol = Protocol::Execute.new(:$result, :$source, :resultset($prepared.resultset), :&send-message);
 
@@ -1419,7 +1418,7 @@ class Client {
 		my @formats = compress-formats(@input-types».format);
 		my @fields = @input-types Z[&type-encode] @values;
 
-		my @result-formats = $decoder.compressed-formats;
+		my @result-formats = $prepared.decoder.compressed-formats;
 
 		self!submit($protocol, [
 			Packet::Bind.new(:name($prepared.name), :@formats, :@fields, :@result-formats),
