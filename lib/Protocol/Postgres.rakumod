@@ -861,7 +861,13 @@ role Type::Array[::Element, Int $oid] does Type[0, Array] {
 
 role TypeMap {
 	method for-type(Any --> Type) { ... }
+	method for-types(@types) {
+		@types.map: { self.for-type($^type) };
+	}
 	method for-oid(Int --> Type) { ... }
+	method for-oids(@oids) {
+		@oids.map: { self.for-oid($^oid) };
+	}
 }
 
 class TypeMap::Minimal does TypeMap {
@@ -1020,7 +1026,7 @@ class ResultSet {
 
 		method new(TypeMap $typemap, FieldDescription @fields, Bool $override = False) {
 			my @names = @fields».name;
-			my @types = @fields.map: { $typemap.for-oid($^field.type) };
+			my @types = $typemap.for-oids(@fields».format);
 			my @formats = $override ?? @types».format !! @fields».format;
 			my @compressed-formats = compress-formats(@formats);
 			self.bless(:@names, :@types, :@formats, :@compressed-formats);
@@ -1208,7 +1214,7 @@ my class Protocol::Prepare does Protocol {
 	multi method incoming-message(Packet::NoData $) {
 	}
 	multi method incoming-message(Packet::ParameterDescription $packet) {
-		@!input-types = $packet.types.map({ $!client.typemap.for-oid($^type) });
+		@!input-types = $!client.typemap.for-oids($packet.types);
 	}
 	method finished() {
 		$!result.keep($!prepared-statement.new(:$!name, :$!client, :@!input-types, :@!output-types));
@@ -1379,7 +1385,7 @@ class Client {
 		my &send-message = { self!send($^message) };
 		my $protocol = Protocol::BindingQuery.new(:$result, :$!typemap, :$resultset, :&send-message);
 
-		my @types = @values.map: { $!typemap.for-type($^value) };
+		my @types = $!typemap.for-types(@values);
 		my @oids = compress-oids(@types».oid);
 		my @formats = compress-formats(@types».format);
 		my @fields = @types Z[&type-encode] @values;
@@ -1393,7 +1399,7 @@ class Client {
 
 	method prepare(Str $query, Str :$name = "prepared-{++$!prepare-counter}", :@input-types, PreparedStatement:U :$prepared-statement --> Promise) {
 		my $result = Promise.new;
-		my @types = @input-types.map: { $!typemap.for-type($^value) };
+		my @types = $!typemap.for-types(@input-types);
 		my @oids = compress-oids(@types».oid);
 		my $protocol = Protocol::Prepare.new(:client(self), :$name, :$result, :$prepared-statement);
 		self!submit($protocol, [
