@@ -4,6 +4,7 @@ Revision history for Protocol-Postgres
     - Split TypeMap::Standard into TypeMap::Native and TypeMap::JSON
     - Rename TypeMap::Stringy to TypeMap::Minimal
     - Split ResultSet::Decoder out of ResultSet::Source
+    - Move much of execute-prepared into PreparedStatement
 
 0.0.6  2023-05-12T16:57:55+02:00
     - Add missing JSON::Fast dependency

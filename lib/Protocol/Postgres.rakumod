@@ -1175,18 +1175,23 @@ my class Protocol::BindingQuery does Protocol::ExtendedQuery {
 class Client { ... }
 
 class PreparedStatement {
-	has Client:D $.client is required;
-	has Str:D $.name is required;
-	has Type @.input-types is required;
-	has Format @.input-formats = compress-formats(@!input-types».format);
-	has ResultSet::Decoder:D $.decoder is required;
+	has Client:D $!client is built is required;
+	has Str:D $!name is built is required;
+	has Type @!input-types is built is required;
+	has Format @!input-formats = compress-formats(@!input-types».format);
+	has ResultSet::Decoder:D $!decoder is built is required;
 	has Str @.columns is required;
 	has Bool $!closed = False;
 	method resultset() { ResultSet }
 	method execute(@values?) {
 		die X::Client.new('Prepared statement already closed') if $!closed;
 		die X::Client.new("Wrong number or arguments, got {+@values} expected {+@!input-types}") if @values != @!input-types;
-		$!client.execute-prepared(self, @values, :resultset(self.resultset));
+
+		my @fields = @!input-types Z[&type-encode] @values;
+		my @result-formats = $!decoder.compressed-formats;
+		my $bind = Packet::Bind.new(:$!name, :formats(@!input-formats), :@fields, :@result-formats);
+
+		$!client.execute-prepared($bind, $!decoder.make-source, self.resultset);
 	}
 	method close(--> Promise) {
 		$!closed = True;
@@ -1409,20 +1414,12 @@ class Client {
 		$result;
 	}
 
-	method execute-prepared(PreparedStatement $prepared, @values --> Promise) {
+	method execute-prepared(Packet::Bind $bind, ResultSet::Source $source, ResultSet:U $resultset --> Promise) {
 		my $result = Promise.new;
-		my $source = $prepared.decoder.make-source;
 		my &send-message = { self!send($^message) };
-		my $protocol = Protocol::Execute.new(:$result, :$source, :resultset($prepared.resultset), :&send-message);
+		my $protocol = Protocol::Execute.new(:$result, :$source, :$resultset, :&send-message);
 
-		my @formats = $prepared.input-formats;
-		my @fields = $prepared.input-types Z[&type-encode] @values;
-		my @result-formats = $prepared.decoder.compressed-formats;
-
-		self!submit($protocol, [
-			Packet::Bind.new(:name($prepared.name), :@formats, :@fields, :@result-formats),
-			Packet::Execute.new, Packet::Sync.new
-		]);
+		self!submit($protocol, [ $bind, Packet::Execute.new, Packet::Sync.new ]);
 		$result;
 	}
 
