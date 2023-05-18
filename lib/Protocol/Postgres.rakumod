@@ -1190,7 +1190,7 @@ class PreparedStatement {
 	}
 	method close(--> Promise) {
 		$!closed = True;
-		$!client.close-prepared(self);
+		$!client.close-prepared($!name);
 	}
 	method DESTROY() {
 		self.close unless $!closed;
@@ -1426,10 +1426,10 @@ class Client {
 		$result;
 	}
 
-	method close-prepared(PreparedStatement $prepared) {
+	method close-prepared(Str:D $name) {
 		my $result = Promise.new;
 		my $protocol = Protocol::Close.new(:$result);
-		self!submit($protocol, [ Packet::Close.new(:name($prepared.name)), Packet::Sync.new ]);
+		self!submit($protocol, [ Packet::Close.new(:$name), Packet::Sync.new ]);
 		$result;
 	}
 
