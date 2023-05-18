@@ -96,8 +96,18 @@ class DecodeBuffer {
 
 role Serializable {
 	method type(--> Any:U) { ... }
-	method encode(EncodeBuffer $buffer, $value) { ... }
-	method decode(DecodeBuffer $buffer) { ... }
+	method encode-to(EncodeBuffer $buffer, $value) { ... }
+	method encode($value --> Blob) {
+		my $encoder = EncodeBuffer.new;
+		self.encode-to($encoder, $value);
+		$encoder.buffer;
+	}
+
+	method decode-from(DecodeBuffer $buffer) { ... }
+	method decode(Blob $buffer --> Map) {
+		my $decoder = DecodeBuffer.new(:$buffer);
+		self.decode-from($decoder);
+	}
 }
 
 our proto map-type(|) { * }
@@ -114,10 +124,10 @@ role Serializable::Integer does Serializable {
 
 class Int32 does Serializable::Integer {
 	method size(--> 4) {}
-	method encode(EncodeBuffer $buffer, Int $value) {
+	method encode-to(EncodeBuffer $buffer, Int $value) {
 		$buffer.write-int32($value);
 	}
-	method decode(DecodeBuffer $buffer) {
+	method decode-from(DecodeBuffer $buffer) {
 		$buffer.read-int32;
 	}
 }
@@ -127,20 +137,20 @@ multi map-type(Int:D $value) { Int32($value) }
 
 class Int16 does Serializable::Integer {
 	method size(--> 2) {}
-	method encode(EncodeBuffer $buffer, Int $value) {
+	method encode-to(EncodeBuffer $buffer, Int $value) {
 		$buffer.write-int16($value);
 	}
-	method decode(DecodeBuffer $buffer) {
+	method decode-from(DecodeBuffer $buffer) {
 		$buffer.read-int16;
 	}
 }
 
 class Int8 does Serializable::Integer {
 	method size(--> 1) {}
-	method encode(EncodeBuffer $buffer, Int $value) {
+	method encode-to(EncodeBuffer $buffer, Int $value) {
 		$buffer.write-int8($value);
 	}
-	method decode(DecodeBuffer $buffer) {
+	method decode-from(DecodeBuffer $buffer) {
 		$buffer.read-int8;
 	}
 }
@@ -148,10 +158,10 @@ class Int8 does Serializable::Integer {
 class String does Serializable {
 	method type() { Str }
 
-	method encode(EncodeBuffer $buffer, Str $value) {
+	method encode-to(EncodeBuffer $buffer, Str $value) {
 		$buffer.write-string($value);
 	}
-	method decode(DecodeBuffer $buffer) {
+	method decode-from(DecodeBuffer $buffer) {
 		$buffer.read-string;
 	}
 }
@@ -160,10 +170,10 @@ multi map-type(Str:U) { String }
 class Tail does Serializable {
 	method type() { Blob }
 
-	method encode(EncodeBuffer $buffer, Blob $value) {
+	method encode-to(EncodeBuffer $buffer, Blob $value) {
 		$buffer.write-buffer($value);
 	}
-	method decode(DecodeBuffer $buffer) {
+	method decode-from(DecodeBuffer $buffer) {
 		$buffer.read-buffer($buffer.remaining-bytes);
 	}
 }
@@ -172,11 +182,11 @@ role Enum[Any:U $enum-type, Any:U $raw-encoding-type] does Serializable {
 	my Serializable:U $encoding-type = map-type($raw-encoding-type);
 	method type() { $enum-type }
 
-	method encode(EncodeBuffer $buffer, Enumeration $value) {
-		$encoding-type.encode($buffer, $value.value);
+	method encode-to(EncodeBuffer $buffer, Enumeration $value) {
+		$encoding-type.encode-to($buffer, $value.value);
 	}
-	method decode(DecodeBuffer $buffer) {
-		$enum-type($encoding-type.decode($buffer));
+	method decode-from(DecodeBuffer $buffer) {
+		$enum-type($encoding-type.decode-from($buffer));
 	}
 }
 
@@ -184,15 +194,15 @@ role Sequence[Any:U $raw-element-type, Serializable::Integer:U $count-type = Int
 	my Serializable:U $element-type = map-type($raw-element-type);
 	method type() { Array[$element-type.type] }
 
-	method encode(EncodeBuffer $buffer, @values) {
-		$count-type.encode($buffer, @values.elems);
+	method encode-to(EncodeBuffer $buffer, @values) {
+		$count-type.encode-to($buffer, @values.elems);
 		for @values -> $value {
-			$element-type.encode($buffer, $value);
+			$element-type.encode-to($buffer, $value);
 		}
 	}
-	method decode(DecodeBuffer $buffer) {
-		my $count = $count-type.decode($buffer);
-		my @result = (^$count).map: { $element-type.decode($buffer) };
+	method decode-from(DecodeBuffer $buffer) {
+		my $count = $count-type.decode-from($buffer);
+		my @result = (^$count).map: { $element-type.decode-from($buffer) };
 		self.type.new(@result);
 	}
 }
@@ -202,12 +212,12 @@ role VarByte[Serializable::Integer:U $count-type, Bool $inclusive = False] does 
 	method type() { Blob }
 	my $offset = $inclusive ?? $count-type.size !! 0;
 
-	method encode(EncodeBuffer $buffer, Blob $value) {
-		$count-type.encode($buffer, $value.elems + $offset);
+	method encode-to(EncodeBuffer $buffer, Blob $value) {
+		$count-type.encode-to($buffer, $value.elems + $offset);
 		$buffer.write-buffer($value);
 	}
-	method decode(DecodeBuffer $buffer) {
-		my $count = $count-type.decode($buffer) - $offset;
+	method decode-from(DecodeBuffer $buffer) {
+		my $count = $count-type.decode-from($buffer) - $offset;
 		$count >= 0 ?? $buffer.read-buffer($count) !! Blob;
 	}
 }
@@ -217,16 +227,16 @@ role Series[Any:U $raw-element-type] does Serializable {
 	my $element-type = map-type($raw-element-type);
 	method type() { Array[$element-type.type] }
 
-	method encode(EncodeBuffer $buffer, @values) {
+	method encode-to(EncodeBuffer $buffer, @values) {
 		for @values -> $value {
-			$element-type.encode($buffer, $value);
+			$element-type.encode-to($buffer, $value);
 		}
 		$buffer.write-int8(0);
 	}
-	method decode(DecodeBuffer $buffer) {
+	method decode-from(DecodeBuffer $buffer) {
 		my @result;
 		while $buffer.peek-int8 != 0 {
-			@result.push($element-type.decode($buffer));
+			@result.push($element-type.decode-from($buffer));
 		}
 		@result;
 	}
@@ -237,18 +247,18 @@ role Mapping[Any:U $raw-key-type, Any:U $raw-value-type] does Serializable {
 	my $value-type = map-type($raw-value-type);
 	method type() { Hash[$value-type.type, $key-type.type] }
 
-	method encode(EncodeBuffer $buffer, $values) {
+	method encode-to(EncodeBuffer $buffer, $values) {
 		for %($values).sort -> $foo (:$key, :$value) {
-			$key-type.encode($buffer, $key);
-			$value-type.encode($buffer, $value);
+			$key-type.encode-to($buffer, $key);
+			$value-type.encode-to($buffer, $value);
 		}
 		$buffer.write-int8(0);
 	}
-	method decode(DecodeBuffer $buffer) {
+	method decode-from(DecodeBuffer $buffer) {
 		my %result{Any};
 		while $buffer.peek-int8 != 0 {
-			my $key = $key-type.decode($buffer);
-			my $value = $value-type.decode($buffer);
+			my $key = $key-type.decode-from($buffer);
+			my $value = $value-type.decode-from($buffer);
 			%result{$key} = $value;
 		}
 		%result;
@@ -256,8 +266,10 @@ role Mapping[Any:U $raw-key-type, Any:U $raw-value-type] does Serializable {
 }
 multi map-type(Hash:U $hash-type) { Mapping[$hash-type.keyof, $hash-type.of] }
 
-class Schema {
+class Schema does Serializable {
 	has Pair @.elements is required;
+	method type() { Hash }
+
 	method new(*@raw-elements) {
 		my @elements = @raw-elements.map(-> (:$key, :$value) { $key => map-type($value) });
 		self.bless(:@elements);
@@ -265,33 +277,24 @@ class Schema {
 	method encode-to(EncodeBuffer $encoder, %attributes) {
 		for @!elements -> (:$key, :$value) {
 			my $result = $value ?? $value.value !! %attributes{$key};
-			$value.encode($encoder, $result);
+			$value.encode-to($encoder, $result);
 		}
-	}
-	method encode(%attributes --> Blob) {
-		my $encoder = EncodeBuffer.new;
-		self.encode-to($encoder, %attributes);
-		$encoder.buffer;
 	}
 	method decode-from(DecodeBuffer $decoder --> Map) {
 		my %result;
 		for @!elements -> (:$key, :$value) {
-			%result{$key} := $value.decode($decoder)
+			%result{$key} := $value.decode-from($decoder)
 		}
 		%result;
-	}
-	method decode(Blob $buffer --> Map) {
-		my $decoder = DecodeBuffer.new(:$buffer);
-		self.decode-from($decoder);
 	}
 }
 
 role Object[Any:U $outer] does Serializable {
 	method type() { $outer }
-	method encode(EncodeBuffer $encoder, $value) {
+	method encode-to(EncodeBuffer $encoder, $value) {
 		$outer.schema.encode-to($encoder, $value.Capture.hash);
 	}
-	method decode(DecodeBuffer $decoder) {
+	method decode-from(DecodeBuffer $decoder) {
 		$outer.new(|$outer.schema.decode-from($decoder));
 	}
 }
