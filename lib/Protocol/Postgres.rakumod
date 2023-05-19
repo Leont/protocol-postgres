@@ -1036,7 +1036,7 @@ class ResultSet {
 
 		method new(TypeMap $typemap, FieldDescription @fields, Bool $override = False) {
 			my @names = @fields».name;
-			my @types = $typemap.for-oids(@fields».format);
+			my @types = $typemap.for-oids(@fields».type);
 			my @formats = $override ?? @types».format !! @fields».format;
 			my @compressed-formats = compress-formats(@formats);
 			self.bless(:@names, :@types, :@formats, :@compressed-formats);
