@@ -1,4 +1,4 @@
-unit module Protocol::Postgres:ver<0.0.7>:auth<cpan:LEONT>;
+unit module Protocol::Postgres:ver<0.0.7>:auth<zef:leont>;
 
 enum ErrorField (:SeverityLocalized(83), :Severity(86), :ErrorCode(67), :Message(77), :Detail(68), :Hint(72), :Position(80), :InternalPosition(112), :InternalQuery(113), :Where(87), :SchemaName(115), :Table(116), :Column(99), :Datatype(100), :Constraint(110), :File(70), :Line(76), :Routine(82));
 constant ErrorMap = Hash[Str, ErrorField];
