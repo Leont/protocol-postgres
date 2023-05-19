@@ -132,6 +132,11 @@ hash-rows(--> Supply[Hash])
 
 This returns a Supply of rows. Each row is a hash with the column names as keys and the row values as values.
 
+object-rows(::Class, Bool :$positional --> Supply[Class])
+---------------------------------------------------------
+
+This returns a Supply of objects of class `Class`, each object is constructed form the row hash unless positional is true in which case it's constructed from the row list.
+
 PreparedStatement
 =================
 

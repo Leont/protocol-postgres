@@ -1019,6 +1019,13 @@ class ResultSet {
 	method hash-rows() {
 		$!rows.map(-> @row { hash @!columns Z=> @row });
 	}
+	method object-rows(::Class, Bool :$positional) {
+		if $positional {
+			$!rows.map: -> @row { Class.new(|@row) };
+		} else {
+			self.hash-rows.map: -> %hash { Class.new(|%hash) };
+		}
+	}
 
 	class Source { ... }
 	class Decoder {
@@ -1556,6 +1563,10 @@ This returns a Supply of rows. Each row is a list of values.
 =head2 hash-rows(--> Supply[Hash])
 
 This returns a Supply of rows. Each row is a hash with the column names as keys and the row values as values.
+
+=head2 object-rows(::Class, Bool :$positional --> Supply[Class])
+
+This returns a Supply of objects of class C<Class>, each object is constructed form the row hash unless positional is true in which case it's constructed from the row list.
 
 =head1 PreparedStatement
 
