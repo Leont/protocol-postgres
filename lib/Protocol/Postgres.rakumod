@@ -789,10 +789,10 @@ class Type::JSON does Type[114, Any] {
 	use JSON::Fast;
 
 	multi method encode-to-text(Any $data) {
-		return to-json($data);
+		to-json($data);
 	}
 	method decode-from-text(Str:D $string) {
-		return from-json($string);
+		from-json($string);
 	}
 }
 
