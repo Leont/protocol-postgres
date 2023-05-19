@@ -1,6 +1,8 @@
 Revision history for Protocol-Postgres
 
 {{$NEXT}}
+
+0.0.7  2023-05-19T16:42:42+02:00
     - Split TypeMap::Standard into TypeMap::Native and TypeMap::JSON
     - Rename TypeMap::Stringy to TypeMap::Minimal
     - Split ResultSet::Decoder out of ResultSet::Source
