@@ -1266,6 +1266,10 @@ class Notification {
 	has Str:D $.message is required;
 }
 
+our sub default-typemap() {
+	TypeMap::JSON;
+}
+
 class Client {
 	has Protocol $!protocol;
 	has Promise $!startup-promise = Promise.new;
@@ -1275,7 +1279,7 @@ class Client {
 	has Packet::Decoder $!decoder = Packet::Decoder.new;
 	has Int $!prepare-counter = 0;
 	has Promise:D $.disconnected is built(False) = Promise.new;
-	has TypeMap $.typemap = TypeMap::JSON;
+	has TypeMap $.typemap = default-typemap();
 	submethod TWEAK() {
 		$!disconnected.then: {
 			my $message = $!disconnected ~~ Broken ?? ~$!disconnected.cause !! 'Disconnected';
