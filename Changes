@@ -1,6 +1,8 @@
 Revision history for Protocol-Postgres
 
 {{$NEXT}}
+
+0.0.8  2023-05-20T19:16:56+02:00
     - Add object-rows to ResultSet
     - Add default-typemap helper function
     - Correctly deduce types from FieldDescription
