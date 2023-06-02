@@ -1042,9 +1042,11 @@ class ResultSet {
 			self.bless(:@names, :@types, :@formats, :@compressed-formats);
 		}
 		method decode(@row) {
-			gather for zip(@!formats, @!types, @row) -> ($format, $type, $value) {
-				take $type.decode($format, $value);
+			my @result;
+			for zip(@!formats, @!types, @row) -> ($format, $type, $value) {
+				@result.push: $type.decode($format, $value);
 			}
+			@result;
 		}
 		method make-source {
 			Source.new(:decoder(self));
