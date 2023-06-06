@@ -3,7 +3,7 @@ unit module Protocol::Postgres:ver<0.0.8>:auth<zef:leont>;
 enum ErrorField (:SeverityLocalized(83), :Severity(86), :ErrorCode(67), :Message(77), :Detail(68), :Hint(72), :Position(80), :InternalPosition(112), :InternalQuery(113), :Where(87), :SchemaName(115), :Table(116), :Column(99), :Datatype(100), :Constraint(110), :File(70), :Line(76), :Routine(82));
 constant ErrorMap = Hash[Str, ErrorField];
 
-package X {
+our package X {
 	our class Client is Exception {
 		has Str:D $.message is required;
 		method new(Str:D $message) {
@@ -23,7 +23,7 @@ package X {
 	}
 }
 
-class EncodeBuffer {
+my class EncodeBuffer {
 	has Buf:D $!buffer = Buf.new;
 	method buffer() { Blob.new($!buffer) }
 
@@ -44,7 +44,7 @@ class EncodeBuffer {
 	}
 }
 
-class DecodeBuffer {
+my class DecodeBuffer {
 	has Blob:D $.buffer is required;
 	has Int $!pos = 0;
 
@@ -94,7 +94,7 @@ class DecodeBuffer {
 	}
 }
 
-role Serializable {
+my role Serializable {
 	method type(--> Any:U) { ... }
 	method encode-to(EncodeBuffer $buffer, $value) { ... }
 	method encode($value --> Blob) {
@@ -110,10 +110,10 @@ role Serializable {
 	}
 }
 
-our proto map-type(|) { * }
+my proto map-type(|) { * }
 multi map-type(Serializable $type) { $type }
 
-role Serializable::Integer does Serializable {
+my role Serializable::Integer does Serializable {
 	method type() { Int }
 	method size() { ... }
 	has Int:D $.value is required;
@@ -122,7 +122,7 @@ role Serializable::Integer does Serializable {
 	}
 }
 
-class Int32 does Serializable::Integer {
+my class Int32 does Serializable::Integer {
 	method size(--> 4) {}
 	method encode-to(EncodeBuffer $buffer, Int $value) {
 		$buffer.write-int32($value);
@@ -135,7 +135,7 @@ class Int32 does Serializable::Integer {
 multi map-type(Int:U) { Int32 }
 multi map-type(Int:D $value) { Int32($value) }
 
-class Int16 does Serializable::Integer {
+my class Int16 does Serializable::Integer {
 	method size(--> 2) {}
 	method encode-to(EncodeBuffer $buffer, Int $value) {
 		$buffer.write-int16($value);
@@ -145,7 +145,7 @@ class Int16 does Serializable::Integer {
 	}
 }
 
-class Int8 does Serializable::Integer {
+my class Int8 does Serializable::Integer {
 	method size(--> 1) {}
 	method encode-to(EncodeBuffer $buffer, Int $value) {
 		$buffer.write-int8($value);
@@ -155,7 +155,7 @@ class Int8 does Serializable::Integer {
 	}
 }
 
-class String does Serializable {
+my class String does Serializable {
 	method type() { Str }
 
 	method encode-to(EncodeBuffer $buffer, Str $value) {
@@ -167,7 +167,7 @@ class String does Serializable {
 }
 multi map-type(Str:U) { String }
 
-class Tail does Serializable {
+my class Tail does Serializable {
 	method type() { Blob }
 
 	method encode-to(EncodeBuffer $buffer, Blob $value) {
@@ -178,7 +178,7 @@ class Tail does Serializable {
 	}
 }
 
-role Enum[Any:U $enum-type, Any:U $raw-encoding-type] does Serializable {
+my role Enum[Any:U $enum-type, Any:U $raw-encoding-type] does Serializable {
 	my Serializable:U $encoding-type = map-type($raw-encoding-type);
 	method type() { $enum-type }
 
@@ -190,7 +190,7 @@ role Enum[Any:U $enum-type, Any:U $raw-encoding-type] does Serializable {
 	}
 }
 
-role Sequence[Any:U $raw-element-type, Serializable::Integer:U $count-type = Int16] does Serializable {
+my role Sequence[Any:U $raw-element-type, Serializable::Integer:U $count-type = Int16] does Serializable {
 	my Serializable:U $element-type = map-type($raw-element-type);
 	method type() { Array[$element-type.type] }
 
@@ -208,7 +208,7 @@ role Sequence[Any:U $raw-element-type, Serializable::Integer:U $count-type = Int
 }
 multi map-type(Array:U $array-type) { Sequence[$array-type.of] }
 
-role VarByte[Serializable::Integer:U $count-type, Bool $inclusive = False] does Serializable {
+my role VarByte[Serializable::Integer:U $count-type, Bool $inclusive = False] does Serializable {
 	method type() { Blob }
 	my $offset = $inclusive ?? $count-type.size !! 0;
 
@@ -223,7 +223,7 @@ role VarByte[Serializable::Integer:U $count-type, Bool $inclusive = False] does 
 }
 multi map-type(Blob:U) { VarByte[Int32] }
 
-role Series[Any:U $raw-element-type] does Serializable {
+my role Series[Any:U $raw-element-type] does Serializable {
 	my $element-type = map-type($raw-element-type);
 	method type() { Array[$element-type.type] }
 
@@ -242,7 +242,7 @@ role Series[Any:U $raw-element-type] does Serializable {
 	}
 }
 
-role Mapping[Any:U $raw-key-type, Any:U $raw-value-type] does Serializable {
+my role Mapping[Any:U $raw-key-type, Any:U $raw-value-type] does Serializable {
 	my $key-type = map-type($raw-key-type);
 	my $value-type = map-type($raw-value-type);
 	method type() { Hash[$value-type.type, $key-type.type] }
@@ -266,7 +266,7 @@ role Mapping[Any:U $raw-key-type, Any:U $raw-value-type] does Serializable {
 }
 multi map-type(Hash:U $hash-type) { Mapping[$hash-type.keyof, $hash-type.of] }
 
-class Schema does Serializable {
+my class Schema does Serializable {
 	has Pair @.elements is required;
 	method type() { Hash }
 
@@ -289,7 +289,7 @@ class Schema does Serializable {
 	}
 }
 
-role Object[Any:U $outer] does Serializable {
+my role Object[Any:U $outer] does Serializable {
 	method type() { $outer }
 	method encode-to(EncodeBuffer $encoder, $value) {
 		$outer.schema.encode-to($encoder, $value.Capture.hash);
@@ -937,13 +937,13 @@ role Authenticator {
 	}
 }
 
-class Authenticator::Null does Authenticator {
+my class Authenticator::Null does Authenticator {
 	multi method incoming-message(Packet::Authentication $packet) {
 		die X::Client.new('Password required but not given');
 	}
 }
 
-class Authenticator::Password does Authenticator {
+my class Authenticator::Password does Authenticator {
 	has Str:D $.user is required;
 	has Str:D $.password is required;
 	has $!scram;
