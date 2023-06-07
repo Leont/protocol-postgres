@@ -22,7 +22,7 @@ done-testing;
 
 sub client-cases {
 	(
-		Protocol::Postgres::Packet::Close.new(:type(Protocol::Postgres::Prepared), :name<bar>),
+		Protocol::Postgres::Packet::Close.new(:type(Protocol::Postgres::RequestType::Prepared), :name<bar>),
 		Protocol::Postgres::Packet::FunctionCall.new(:1234object-id),
 	);
 }
