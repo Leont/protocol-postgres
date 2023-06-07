@@ -628,15 +628,13 @@ package Packet {
 
 	my Callable %back-decoder = map &get-decoder, Packet::Bind, Packet::Close, Packet::CopyData, Packet::CopyDone, Packet::CopyFail, Packet::Execute, Packet::Flush, Packet::FunctionCall, Packet::GSSResponse, Packet::Parse, Packet::PasswordMessage, Packet::Query, Packet::SASLInitialResponse, Packet::SASLResponse, Packet::Sync, Packet::Terminate;
 
-	enum Side <Front Back>;
-
 	class Decoder {
 		has Buf:D $!buffer is required;
 		has Callable %!decoder-for;
 
-		submethod BUILD(Blob :$buffer, Side :$type = Side::Front) {
+		submethod BUILD(Blob :$buffer, Bool :$backend) {
 			$!buffer = Buf.new($buffer // ());
-			%!decoder-for = $type === Front ?? %front-decoder !! %back-decoder;
+			%!decoder-for = $backend ?? %back-decoder !! %front-decoder;
 		}
 		method add-data(Blob:D $data --> Nil) {
 			$!buffer ~= $data;

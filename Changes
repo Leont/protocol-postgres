@@ -3,6 +3,7 @@ Revision history for Protocol-Postgres
 {{$NEXT}}
     - Make rows() return Arrays instead of Seqs
     - Make serialization classes lexical
+    - Eliminate Packet::Side
 
 0.0.8  2023-05-20T19:16:56+02:00
     - Add object-rows to ResultSet
