@@ -787,7 +787,7 @@ class Type::JSON does Type[114, Any] {
 	use JSON::Fast;
 
 	multi method encode-to-text(Any $data) {
-		to-json($data);
+		to-json($data, :!pretty);
 	}
 	method decode-from-text(Str:D $string) {
 		from-json($string);
