@@ -1364,20 +1364,20 @@ class Client {
 	multi method incoming-message(Packet::NegotiateProtocolVersion $version) {
 		$!startup-promise.break(X::Client.new('Unsupported protocol version ' ~ $version.newest-minor-version));
 	}
-	multi method incoming-message(Packet::BackendKeyData $ (:$process-id, :$secret-key)) {
-		$!process-id = $process-id;
-		$!secret-key = $secret-key;
+	multi method incoming-message(Packet::BackendKeyData $data) {
+		$!process-id = $data.process-id;
+		$!secret-key = $data.secret-key;
 	}
-	multi method incoming-message(Packet::ParameterStatus $ (:$name, :$value)) {
-		%!parameters{$name} = $value;
+	multi method incoming-message(Packet::ParameterStatus $status) {
+		%!parameters{$status.name} = $status.value;
 	}
-	multi method incoming-message(Packet::NotificationResponse $packet (:$sender, :$channel, :$message)) {
-		with %!notification-channel{$channel} -> $channel {
-			$channel.emit(Notification.new(:$sender, :$channel, :$message));
+	multi method incoming-message(Packet::NotificationResponse $packet) {
+		with %!notification-channel{$packet.channel} -> $supplier {
+			$supplier.emit(Notification.new(:sender($packet.sender), :channel($packet.channel), :message($packet.message)));
 		}
 	}
-	multi method incoming-message(Packet::ErrorResponse $ (:%values)) {
-		$!protocol.failed(%values);
+	multi method incoming-message(Packet::ErrorResponse $error) {
+		$!protocol.failed($error.values);
 	}
 	multi method incoming-message(Packet::ReadyForQuery $) {
 		$!protocol.finished;
