@@ -921,6 +921,25 @@ class TypeMap::JSON does TypeMap::Core {
 	multi method for-type(Map) { Type::JSON }
 }
 
+my role TypeMap::Overlay {
+	has Type %!for-type{Any:U};
+	has Type %!for-oid{Int};
+
+	method add-type(Type $type, Any:U :$type-object = $type.type-object, Int:D :$oid = $type.oid --> Nil) {
+		%!for-type{$type-object} = $type;
+		%!for-oid{$oid} = $type;
+	}
+
+	method for-type(Any $type --> Type) {
+		my $what = $type.WHAT;
+		%!for-type{$what}:exists ?? %!for-type{$what} !! nextsame;
+	}
+
+	method for-oid(Int $oid --> Type) {
+		%!for-oid{$oid}:exists ?? %!for-oid{$oid} !! nextsame;
+	}
+}
+
 my role Protocol {
 	proto method incoming-message(Packet::Base $packet) { * }
 	multi method incoming-message(Packet::NoticeResponse $) {}
