@@ -1283,7 +1283,7 @@ class Client {
 	has Promise $!startup-promise = Promise.new;
 	has Supplier $!outbound-messages handles(:outbound-messages<Supply>) = Supplier.new;
 	has Supply $!outbound-data;
-	has Supplier $!notifications handles(:notifications<Supply>) = Supplier.new;
+	has Supplier %!notification-channel;
 	has Packet::Decoder $!decoder = Packet::Decoder.new;
 	has Int $!prepare-counter = 0;
 	has Promise:D $.disconnected is built(False) = Promise.new;
@@ -1301,7 +1301,9 @@ class Client {
 			for @!tasks -> $ (:$protocol, :@packets) {
 				$protocol.failed(%error);
 			}
-			$!notifications.done;
+			for %!notification-channel.values -> $channel {
+				$channel.done;
+			}
 		}
 	}
 
@@ -1370,7 +1372,9 @@ class Client {
 		%!parameters{$name} = $value;
 	}
 	multi method incoming-message(Packet::NotificationResponse $packet (:$sender, :$channel, :$message)) {
-		$!notifications.emit(Notification.new(:$sender, :$channel, :$message));
+		with %!notification-channel{$channel} -> $channel {
+			$channel.emit(Notification.new(:$sender, :$channel, :$message));
+		}
 	}
 	multi method incoming-message(Packet::ErrorResponse $ (:%values)) {
 		$!protocol.failed(%values);
@@ -1381,6 +1385,11 @@ class Client {
 	}
 	multi method incoming-message(Packet::Base $packet) {
 		$!protocol.incoming-message($packet) with $!protocol;
+	}
+
+	method get-channel(Str $name --> Supply) {
+		my $supplier = %!notification-channel{$name} //= Supplier::Preserving.new;
+		$supplier.Supply;
 	}
 
 	method startTls(--> Blob) {
@@ -1536,6 +1545,10 @@ This will issue a complex query that may contain multiple statements, but can no
 
 This prepares the query, and returns a Promise to the PreparedStatement object. C<@input-types> can be used to pass on hints about the types you're passing in during C<execute>.
 
+=head2 method get-channel(Str $name --> Supply)
+
+This returns the C<Supply> for the given channel.
+
 =head2 startTls(--> Blob)
 
 This will return the marker that should be written to the server to start upgrading the connection to use TLS. If the server responds with a single C<S> byte the proposal is accepted and the client is expected to initiate the TLS handshake. If the server responds with an C<N> it is rejected, and the connection proceeds in cleartext.
@@ -1543,10 +1556,6 @@ This will return the marker that should be written to the server to start upgrad
 =head2 terminate(--> Nil)
 
 This sends a message to the server to terminate the connection
-
-=head2 notifications(--> Supply[Notification])
-
-This returns a supply with all notifications that the current connection is subscribed to. Channels can be subscribed using the C<LISTEN> command, and messages can be sent using the C<NOTIFY> command.
 
 =head2 disconnected(--> Promise)
 
