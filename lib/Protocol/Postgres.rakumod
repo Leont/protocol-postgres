@@ -1025,6 +1025,17 @@ class ResultSet {
 		}
 	}
 
+	method arrays() { self.rows.list }
+	method array()  { await self.rows.first }
+
+	method value()  { self.array.head }
+
+	method hashes() { self.hash-rows.list }
+	method hash()   { await self.hash-rows.first }
+
+	method objects(::Class, Bool :$positional) { self.object-rows(Class, :$positional).list }
+	method object(::Class, Bool :$positional) { await self.object-rows(Class, :$positional).first }
+
 	class Source { ... }
 	class Decoder {
 		has Str @.names;
@@ -1057,9 +1068,9 @@ class ResultSet {
 		method add-row(@row) {
 			$!rows.emit($!decoder.decode(@row));
 		}
-		method resultset(ResultSet:U $resultset) {
+		method resultset() {
 			my @columns = $!decoder.names;
-			$resultset.new(:@columns, :rows($!rows.Supply));
+			ResultSet.new(:@columns, :rows($!rows.Supply));
 		}
 	}
 }
@@ -1068,19 +1079,18 @@ my class Protocol::Query does Protocol {
 	has TypeMap $.typemap is required;
 	has ResultSet::Source $!source;
 	has Supplier:D $.supplier handles(:finished<done>) is required;
-	has ResultSet:U $.resultset is required;
 
 	multi method incoming-message(Packet::RowDescription $row) {
 		my $decoder = ResultSet::Decoder.new($!typemap, $row.fields);
 		$!source = $decoder.make-source;
-		$!supplier.emit($!source.resultset(:$!resultset));
+		$!supplier.emit($!source.resultset);
 	}
 	multi method incoming-message(Packet::DataRow $row) {
 		$!source.add-row($row.values);
 	}
 	multi method incoming-message(Packet::EmptyQueryResponse $) {
 		$!source = ResultSet::Decoder.new($!typemap, []).make-source;
-		$!supplier.emit($!source.resultset(:$!resultset));
+		$!supplier.emit($!source.resultset);
 	}
 	multi method incoming-message(Packet::CommandComplete $) {
 		$!source.done with $!source;
@@ -1097,7 +1107,6 @@ my role Protocol::ExtendedQuery does Protocol {
 	has Promise:D $.result is required;
 	has ResultSet::Source $.source;
 	has Stage:D $.stage = Parsing;
-	has ResultSet:U $.resultset is required;
 	has Supplier $!copy-from;
 	has &.send-message is required;
 	multi method incoming-message(Packet::DataRow $row) {
@@ -1178,7 +1187,7 @@ my class Protocol::BindingQuery does Protocol::ExtendedQuery {
 		$!stage = Executing;
 		my $decoder = ResultSet::Decoder.new($!typemap, $packet.fields);
 		$!source = $decoder.make-source;
-		$!result.keep($!source.resultset($!resultset));
+		$!result.keep($!source.resultset);
 	}
 }
 
@@ -1192,7 +1201,6 @@ class PreparedStatement {
 	has ResultSet::Decoder:D $!decoder is built is required;
 	has Str @.columns is required;
 	has Bool $!closed = False;
-	method resultset() { ResultSet }
 	method execute(@values?) {
 		die X::Client.new('Prepared statement already closed') if $!closed;
 		die X::Client.new("Wrong number or arguments, got {+@values} expected {+@!input-types}") if @values != @!input-types;
@@ -1201,7 +1209,7 @@ class PreparedStatement {
 		my @result-formats = $!decoder.compressed-formats;
 		my $bind = Packet::Bind.new(:$!name, :formats(@!input-formats), :@fields, :@result-formats);
 
-		$!client.execute-prepared($bind, $!decoder.make-source, self.resultset);
+		$!client.execute-prepared($bind, $!decoder.make-source);
 	}
 	method close(--> Promise) {
 		$!closed = True;
@@ -1244,7 +1252,7 @@ my class Protocol::Execute does Protocol::ExtendedQuery {
 	multi method incoming-message(Packet::BindComplete $) {
 		$!stage = Executing;
 		if $!source {
-			$!result.keep($!source.resultset($!resultset));
+			$!result.keep($!source.resultset);
 		}
 	}
 }
@@ -1390,9 +1398,9 @@ class Client {
 		$!startup-promise;
 	}
 
-	method query-multiple(Str $query, ResultSet:U :$resultset --> Supply) {
+	method query-multiple(Str $query --> Supply) {
 		my $supplier = Supplier::Preserving.new;
-		self!submit(Protocol::Query.new(:$supplier, :$resultset), [ Packet::Query.new(:$query) ]);
+		self!submit(Protocol::Query.new(:$supplier), [ Packet::Query.new(:$query) ]);
 		$supplier.Supply;
 	}
 
@@ -1400,10 +1408,10 @@ class Client {
 		all(@oids) == 0 ?? () !! @oids;
 	}
 
-	method query(Str $query, @values?, ResultSet:U :$resultset --> Promise) {
+	method query(Str $query, @values? --> Promise) {
 		my $result = Promise.new;
 		my &send-message = { self!send($^message) };
-		my $protocol = Protocol::BindingQuery.new(:$result, :$!typemap, :$resultset, :&send-message);
+		my $protocol = Protocol::BindingQuery.new(:$result, :$!typemap, :&send-message);
 
 		my @types = $!typemap.for-types(@values);
 		my @oids = compress-oids(@types».oid);
@@ -1428,10 +1436,10 @@ class Client {
 		$result;
 	}
 
-	method execute-prepared(Packet::Bind $bind, ResultSet::Source $source, ResultSet:U $resultset --> Promise) {
+	method execute-prepared(Packet::Bind $bind, ResultSet::Source $source --> Promise) {
 		my $result = Promise.new;
 		my &send-message = { self!send($^message) };
-		my $protocol = Protocol::Execute.new(:$result, :$source, :$resultset, :&send-message);
+		my $protocol = Protocol::Execute.new(:$result, :$source, :&send-message);
 
 		self!submit($protocol, [ $bind, Packet::Execute.new, Packet::Sync.new ]);
 		$result;
@@ -1571,6 +1579,34 @@ This returns a Supply of rows. Each row is a hash with the column names as keys 
 =head2 object-rows(::Class, Bool :$positional --> Supply[Class])
 
 This returns a Supply of objects of class C<Class>, each object is constructed form the row hash unless positional is true in which case it's constructed from the row list.
+
+=head2 arrays
+
+This returns a sequence of arrays of results from all rows. This may C<await>.
+
+=head2 array
+
+This returns a single array of results from one row. This may C<await>.
+
+=head2 value
+
+This returns a single value from a single row. This may C<await>.
+
+=head2 hashes
+
+This returns a sequence of hashes of the results from all rows. This may C<await>.
+
+=head2 hash
+
+This returns a single hash of the results from one rows. This may C<await>.
+
+=head2 objects(::Class, Bool :$positional)
+
+This returns a sequence of objects based on all the rows. This may C<await>.
+
+=head2 object(:Class, Bool :$positional)
+
+This returns a single object based on a single row. This may C<await>.
 
 =head1 PreparedStatement
 
