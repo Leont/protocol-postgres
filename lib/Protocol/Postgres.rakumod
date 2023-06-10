@@ -683,9 +683,9 @@ package OpenPacket {
 	}
 }
 
-role Type[Int:D $oid, Any:U $type] {
-	method oid(--> Int) { $oid }
-	method type-object() { $type }
+role Type {
+	method oid(--> Int) { ... }
+	method type-object() { ... }
 	method format() { Text }
 
 	method encode-to-text(Any:D $value) { ... }
@@ -705,7 +705,12 @@ sub type-encode(Type $type, Any $value) {
 	$type.encode($type.format, $value);
 }
 
-class Type::Bool does Type[16, Bool] {
+role Type::Simple[Int:D $oid, Any:U $type] does Type {
+	method oid(--> Int) { $oid }
+	method type-object() { $type }
+}
+
+class Type::Bool does Type::Simple[16, Bool] {
 	method encode-to-text(Bool(Any:D) $input) {
 		$input ?? 't' !! 'f';
 	}
@@ -714,7 +719,7 @@ class Type::Bool does Type[16, Bool] {
 	}
 }
 
-class Type::Blob does Type[17, Blob] {
+class Type::Blob does Type::Simple[17, Blob] {
 	method format() { Binary }
 	multi method encode(Binary, Blob $input) { $input }
 	method encode-to-text(Blob $value) {
@@ -729,7 +734,7 @@ class Type::Blob does Type[17, Blob] {
 	}
 }
 
-class Type::Int does Type[20, Int] {
+class Type::Int does Type::Simple[20, Int] {
 	method encode-to-text(Int(Cool:D) $int) {
 		~$int;
 	}
@@ -738,7 +743,7 @@ class Type::Int does Type[20, Int] {
 	}
 }
 
-class Type::Num does Type[701, Num] {
+class Type::Num does Type::Simple[701, Num] {
 	method encode-to-text(Num(Cool:D) $num) {
 		~$num;
 	}
@@ -747,7 +752,7 @@ class Type::Num does Type[701, Num] {
 	}
 }
 
-class Type::Rat does Type[1700, Rat] {
+class Type::Rat does Type::Simple[1700, Rat] {
 	method encode-to-text(Rat(Cool:D) $rat) {
 		~$rat;
 	}
@@ -756,7 +761,7 @@ class Type::Rat does Type[1700, Rat] {
 	}
 }
 
-class Type::Date does Type[1182, Date] {
+class Type::Date does Type::Simple[1182, Date] {
 	method encode-to-text(Date(Any:D) $date) {
 		~$date;
 	}
@@ -765,7 +770,7 @@ class Type::Date does Type[1182, Date] {
 	}
 }
 
-class Type::DateTime does Type[1184, DateTime] {
+class Type::DateTime does Type::Simple[1184, DateTime] {
 	my sub to-datetime(Str $string --> DateTime) {
 		$string.subst(' ', 'T').DateTime;
 	}
@@ -783,7 +788,7 @@ class Type::DateTime does Type[1184, DateTime] {
 	}
 }
 
-class Type::JSON does Type[114, Any] {
+class Type::JSON does Type::Simple[114, Any] {
 	use JSON::Fast;
 
 	multi method encode-to-text(Any $data) {
@@ -806,7 +811,7 @@ my multi encode-array($element, @values) {
 	'{' ~ @values.map({ quote-string($element.encode-to-text($^value)) }).join(', ') ~ '}';
 }
 
-class Type::Str does Type[0, Str] {
+class Type::Str does Type::Simple[0, Str] {
 	method encode-to-text(Str:D(Any) $input) {
 		$input;
 	}
@@ -815,7 +820,7 @@ class Type::Str does Type[0, Str] {
 	}
 }
 
-role Type::Array[::Element, Int $oid] does Type[0, Array] {
+role Type::Array[::Element, Int $oid] does Type {
 	method oid(--> Int) { $oid }
 	method type-object() { Array[Element.type-object] }
 	my grammar ArrayParser {
@@ -860,7 +865,7 @@ role Type::Array[::Element, Int $oid] does Type[0, Array] {
 	}
 }
 
-role Type::Enum[::Enum, Int $oid] does Type[0, Any] {
+role Type::Enum[::Enum, Int $oid] does Type {
 	method oid(--> Int) { $oid }
 	method type-object() { Enum }
 
@@ -911,7 +916,7 @@ my grammar ObjectParser {
 	}
 }
 
-role Type::Composite[::Composite, Int $oid, Pair @elements, Bool $positional] does Type[0, Any] {
+role Type::Composite[::Composite, Int $oid, Pair @elements, Bool $positional] does Type {
 	my @names = @elements.keys;
 	method oid(--> Int) { $oid }
 	method type-object() { Composite }
