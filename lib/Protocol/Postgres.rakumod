@@ -950,6 +950,18 @@ role Type::Composite[::Composite, Int $oid, Pair @elements, Bool $positional] do
 	}
 }
 
+role Type::Custom[::Custom, Int $oid, &from-string, &to-string] does Type {
+	method oid(--> Int) { $oid }
+	method type-object() { Custom }
+
+	method encode-to-text(Custom $value) {
+		to-string($value);
+	}
+	method decode-from-text(Str $string) {
+		from-string($string);
+	}
+}
+
 role TypeMap {
 	method for-type(Any --> Type) { ... }
 	method for-types(@types) {
@@ -1535,6 +1547,9 @@ class Client {
 		my Pair @attributes = Composite.^attributes.map: { $^attr.name.subst(/ ^ <[$@%&]> '!'? /, '') => $!typemap.for-type($^attr.type) };
 		self!add-dynamic-type($name, -> $oid { Type::Composite[Composite, $oid, @attributes, $positional] });
 	}
+	method add-custom-type(Str $name, ::Custom, &from-string = -> Custom(Str) $custom { $custom }, &to-string = -> Custom $custom { ~$custom }) {
+		self!add-dynamic-type($name, -> $oid { Type::Custom[Custom, $oid, &from-string, &to-string] });
+	}
 
 	method query-multiple(Str $query --> Supply) {
 		my $supplier = Supplier::Preserving.new;
@@ -1685,6 +1700,10 @@ This looks up the C<oid> of postgres enum C<$name>, and adds an appriopriate C<T
 =head2 add-composite-type(Str $name, ::Composite, Bool :$positional --> Promise)
 
 This looks up the C<oid> of the postgres composite type <$name>, and maps it to C<Composite>; if C<$positional> is set it will use positional constructor arguments, otherwise named ones are used.
+
+=head2 add-custom-type(Str $name, ::Custom, &from-string?, &to-string?)
+
+This adds a custom converter from postgres type C<$name> from/to Raku type C<Custom>. By default C<&from-string> will do a coercion, and C<&to-string> will do stringification.
 
 =head2 startTls(--> Blob)
 
