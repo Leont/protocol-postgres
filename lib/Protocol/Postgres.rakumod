@@ -1294,7 +1294,7 @@ class Notification {
 }
 
 our sub default-typemap() {
-	TypeMap::JSON;
+	TypeMap::JSON.new;
 }
 
 class Client {
@@ -1429,6 +1429,14 @@ class Client {
 	method !add-static-type(Type $type, Any:U :$type-object = $type.type-object, Int:D :$oid = $type.oid --> Nil) {
 		$!typemap does TypeMap::Overlay unless $!typemap ~~ TypeMap::Overlay;
 		$!typemap.add-type($type, :$type-object, :$oid);
+	}
+
+	method !add-dynamic-type(Str $name, &callback --> Promise) {
+		self.query('SELECT oid FROM pg_type WHERE typname = $1', [ $name.lc ]).then: -> $p {
+			my $result = await $p;
+			my $oid = $result.value orelse die X::Client.new("No such type '$name'");
+			self!add-static-type(callback($oid), :$oid);
+		}
 	}
 
 	method query-multiple(Str $query --> Supply) {
