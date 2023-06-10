@@ -872,6 +872,79 @@ role Type::Enum[::Enum, Int $oid] does Type[0, Any] {
 	}
 }
 
+my grammar ObjectParser {
+	rule TOP {
+		^ <composite> $
+		{ make $<composite>.made }
+	}
+	rule composite {
+		'(' ~ ')' <element>* % ','
+		{ make eager $<element>».made }
+	}
+	rule array {
+		'{' ~ '}' <element>* % ','
+		{ make eager $<element>».made }
+	}
+	rule element {
+		[ <value=array> | <value=string> | <value=quoted> | <value=null> ]
+		{ make $<value>.made }
+	}
+	token string {
+		<-[",{}()\ ]>+
+		{ make ~$/ }
+	}
+	token quoted {
+		'"' ~ '"' [ <str> | \\ <str=.escaped> ]*
+		{ make $<str>».made.join }
+	}
+	token str {
+		 <-["\\]>+
+		{ make ~$/ }
+	}
+	token escaped {
+		<["\\]>
+		{ make ~$/ }
+	}
+	token null {
+		'NULL'
+		{ make Nil }
+	}
+}
+
+role Type::Composite[::Composite, Int $oid, Pair @elements, Bool $positional] does Type[0, Any] {
+	my @names = @elements.keys;
+	method oid(--> Int) { $oid }
+	method type-object() { Composite }
+
+	multi encode-attribute($element where Type::Array|Type::Int|Type::Num|Type::Rat, $value) {
+		$element.encode-to-text($value) // '';
+	}
+	multi encode-attribute($element, $value) {
+		my $raw = $element.encode-to-text($value);
+		$raw.defined ?? quote-string($raw) !! '';
+	}
+
+	method encode-to-text(Type $value) {
+		my @values = @names.map: { encode-attribute($value."$^name"()) };
+		'(' ~ @values.join(',') ~ ')';
+	}
+
+	method decode-from-text(Str $string) {
+		my $parsed = ObjectParser.parse($string) // die "Could not parse '$string'";
+		if $positional {
+			my @arguments = zip(@elements, $parsed.made, :with(-> $element, $raw {
+				$element.value.decode-from-text($raw);
+			}));
+			Composite.new(|@arguments);
+		} else {
+			my %arguments = zip(@elements, $parsed.made, :with(-> $element, $raw {
+				$element.key => $element.value.decode-from-text($raw);
+			}));
+			Composite.new(|%arguments);
+		}
+	}
+}
+
 role TypeMap {
 	method for-type(Any --> Type) { ... }
 	method for-types(@types) {
@@ -1453,6 +1526,10 @@ class Client {
 	method add-enum-type(Str $name, ::Enum --> Promise) {
 		self!add-dynamic-type($name, -> $oid { Type::Enum[Enum, $oid] });
 	}
+	method add-composite-type(Str $name, ::Composite, Bool :$positional = False --> Promise) {
+		my Pair @attributes = Composite.^attributes.map: { $^attr.name.subst(/ ^ <[$@%&]> '!'? /, '') => $!typemap.for-type($^attr.type) };
+		self!add-dynamic-type($name, -> $oid { Type::Composite[Composite, $oid, @attributes, $positional] });
+	}
 
 	method query-multiple(Str $query --> Supply) {
 		my $supplier = Supplier::Preserving.new;
@@ -1599,6 +1676,10 @@ This returns the C<Supply> for the given channel.
 =head2 add-enum-type(Str $name, ::Enum --> Promise)
 
 This looks up the C<oid> of postgres enum C<$name>, and adds an appriopriate C<Type> object to the typemap to convert it from/to C<Enum>.
+
+=head2 add-composite-type(Str $name, ::Composite, Bool :$positional --> Promise)
+
+This looks up the C<oid> of the postgres composite type <$name>, and maps it to C<Composite>; if C<$positional> is set it will use positional constructor arguments, otherwise named ones are used.
 
 =head2 startTls(--> Blob)
 
