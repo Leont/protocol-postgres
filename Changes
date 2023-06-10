@@ -6,6 +6,7 @@ Revision history for Protocol-Postgres
     - Add channel multiplexing to Client
     - Add static type addition handling
     - Add dynamic type handling
+    - Add enum type support
 
 0.0.9  2023-06-07T19:43:54+02:00
     - Make rows() return Arrays instead of Seqs

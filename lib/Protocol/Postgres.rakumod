@@ -860,6 +860,18 @@ role Type::Array[::Element, Int $oid] does Type[0, Array] {
 	}
 }
 
+role Type::Enum[::Enum, Int $oid] does Type[0, Any] {
+	method oid(--> Int) { $oid }
+	method type-object() { Enum }
+
+	method encode-to-text(Enum(Any) $value) {
+		~$value;
+	}
+	method decode-from-text(Str $string) {
+		Enum.WHO{$string};
+	}
+}
+
 role TypeMap {
 	method for-type(Any --> Type) { ... }
 	method for-types(@types) {
@@ -1438,6 +1450,9 @@ class Client {
 			self!add-static-type(callback($oid), :$oid);
 		}
 	}
+	method add-enum-type(Str $name, ::Enum --> Promise) {
+		self!add-dynamic-type($name, -> $oid { Type::Enum[Enum, $oid] });
+	}
 
 	method query-multiple(Str $query --> Supply) {
 		my $supplier = Supplier::Preserving.new;
@@ -1580,6 +1595,10 @@ This prepares the query, and returns a Promise to the PreparedStatement object. 
 =head2 method get-channel(Str $name --> Supply)
 
 This returns the C<Supply> for the given channel.
+
+=head2 add-enum-type(Str $name, ::Enum --> Promise)
+
+This looks up the C<oid> of postgres enum C<$name>, and adds an appriopriate C<Type> object to the typemap to convert it from/to C<Enum>.
 
 =head2 startTls(--> Blob)
 
