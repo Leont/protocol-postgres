@@ -1426,6 +1426,11 @@ class Client {
 		$!startup-promise;
 	}
 
+	method !add-static-type(Type $type, Any:U :$type-object = $type.type-object, Int:D :$oid = $type.oid --> Nil) {
+		$!typemap does TypeMap::Overlay unless $!typemap ~~ TypeMap::Overlay;
+		$!typemap.add-type($type, :$type-object, :$oid);
+	}
+
 	method query-multiple(Str $query --> Supply) {
 		my $supplier = Supplier::Preserving.new;
 		self!submit(Protocol::Query.new(:$supplier), [ Packet::Query.new(:$query) ]);
