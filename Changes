@@ -1,6 +1,8 @@
 Revision history for Protocol-Postgres
 
 {{$NEXT}}
+
+0.0.10  2023-06-11T11:38:28+02:00
     - Use non-pretty json output
     - Move awaiting ResultSet methods from Net::Postgres
     - Add channel multiplexing to Client

@@ -82,6 +82,26 @@ prepare($query, :@input-types --> Promise[PreparedStatement])
 
 This prepares the query, and returns a Promise to the PreparedStatement object. `@input-types` can be used to pass on hints about the types you're passing in during `execute`.
 
+method get-channel(Str $name --> Supply)
+----------------------------------------
+
+This returns the `Supply` for the given channel.
+
+add-enum-type(Str $name, ::Enum --> Promise)
+--------------------------------------------
+
+This looks up the `oid` of postgres enum `$name`, and adds an appriopriate `Type` object to the typemap to convert it from/to `Enum`.
+
+add-composite-type(Str $name, ::Composite, Bool :$positional --> Promise)
+-------------------------------------------------------------------------
+
+This looks up the `oid` of the postgres composite type <$name>, and maps it to `Composite`; if `$positional` is set it will use positional constructor arguments, otherwise named ones are used.
+
+add-custom-type(Str $name, ::Custom, &from-string?, &to-string?)
+----------------------------------------------------------------
+
+This adds a custom converter from postgres type `$name` from/to Raku type `Custom`. By default `&from-string` will do a coercion, and `&to-string` will do stringification.
+
 startTls(--> Blob)
 ------------------
 
@@ -91,11 +111,6 @@ terminate(--> Nil)
 ------------------
 
 This sends a message to the server to terminate the connection
-
-notifications(--> Supply[Notification])
----------------------------------------
-
-This returns a supply with all notifications that the current connection is subscribed to. Channels can be subscribed using the `LISTEN` command, and messages can be sent using the `NOTIFY` command.
 
 disconnected(--> Promise)
 -------------------------
@@ -136,6 +151,41 @@ object-rows(::Class, Bool :$positional --> Supply[Class])
 ---------------------------------------------------------
 
 This returns a Supply of objects of class `Class`, each object is constructed form the row hash unless positional is true in which case it's constructed from the row list.
+
+arrays
+------
+
+This returns a sequence of arrays of results from all rows. This may `await`.
+
+array
+-----
+
+This returns a single array of results from one row. This may `await`.
+
+value
+-----
+
+This returns a single value from a single row. This may `await`.
+
+hashes
+------
+
+This returns a sequence of hashes of the results from all rows. This may `await`.
+
+hash
+----
+
+This returns a single hash of the results from one rows. This may `await`.
+
+objects(::Class, Bool :$positional)
+-----------------------------------
+
+This returns a sequence of objects based on all the rows. This may `await`.
+
+object(:Class, Bool :$positional)
+---------------------------------
+
+This returns a single object based on a single row. This may `await`.
 
 PreparedStatement
 =================
