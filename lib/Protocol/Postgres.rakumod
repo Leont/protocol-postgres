@@ -1535,10 +1535,12 @@ class Client {
 	}
 
 	method !add-dynamic-type(Str $name, &callback --> Promise) {
-		self.query('SELECT oid FROM pg_type WHERE typname = $1', [ $name.lc ]).then: -> $p {
+		self.query('SELECT oid, typarray FROM pg_type WHERE typname = $1', [ $name.lc ]).then: -> $p {
 			my $result = await $p;
-			my $oid = $result.value orelse die X::Client.new("No such type '$name'");
-			self!add-static-type(callback($oid), :$oid);
+			my ($oid, $array-oid) = $result.array or die X::Client.new("No such type '$name'");
+			my $type = callback($oid);
+			self!add-static-type($type, :$oid);
+			self!add-static-type(Type::Array[$type, $array-oid]) with $array-oid;
 		}
 	}
 	method add-enum-type(Str $name, ::Enum --> Promise) {
