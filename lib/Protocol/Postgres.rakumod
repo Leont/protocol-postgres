@@ -988,6 +988,13 @@ role TypeMap::Core does TypeMap {
 	multi method for-type(Date) { Type::Date }
 	multi method for-type(Rat) { Type::Rat }
 
+	multi method for-type(Array[Bool] $array) { Type::Array[Type::Bool, 1000] }
+	multi method for-type(Array[Blob] $array) { Type::Array[Type::Blob, 1001] }
+	multi method for-type(Array[Int] $array) { Type::Array[Type::Int, 1016] }
+	multi method for-type(Array[Num] $array) { Type::Array[Type::Num, 1022] }
+	multi method for-type(Array[Date] $array) { Type::Array[Type::Date, 1082] }
+	multi method for-type(Array[DateTime] $array) { Type::Array[Type::DateTime, 1085] }
+
 	multi method for-oid(Int) { Type::Str }
 	multi method for-oid(16) { Type::Bool }
 	multi method for-oid(17) { Type::Blob }
@@ -1009,13 +1016,7 @@ role TypeMap::Core does TypeMap {
 }
 
 class TypeMap::Native does TypeMap::Core {
-	multi method for-type(Array $array) { Type::Array[Type::Str, 1009] }
-	multi method for-type(Array[Bool] $array) { Type::Array[Type::Bool, 1000] }
-	multi method for-type(Array[Blob] $array) { Type::Array[Type::Blob, 1001] }
-	multi method for-type(Array[Int] $array) { Type::Array[Type::Int, 1016] }
-	multi method for-type(Array[Num] $array) { Type::Array[Type::Num, 1022] }
-	multi method for-type(Array[Date] $array) { Type::Array[Type::Date, 1082] }
-	multi method for-type(Array[DateTime] $array) { Type::Array[Type::DateTime, 1085] }
+	multi method for-type(List $array) { Type::Array[Type::Str, 1009] }
 }
 
 class TypeMap::JSON does TypeMap::Core {
