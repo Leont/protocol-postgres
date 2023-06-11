@@ -1346,7 +1346,6 @@ my class Protocol::Prepare does Protocol {
 	has Client:D $.client is required;
 	has Str:D $.name is required;
 	has Promise:D $.result is required;
-	has PreparedStatement:U $.prepared-statement is required;
 	has Type @!input-types;
 	has FieldDescription @!output-types;
 
@@ -1363,7 +1362,7 @@ my class Protocol::Prepare does Protocol {
 	method finished() {
 		my @columns = @!output-types.map(*.name);
 		my $decoder = ResultSet::Decoder.new($!client.typemap, @!output-types, True);
-		$!result.keep($!prepared-statement.new(:$!name, :$!client, :@!input-types, :@columns, :$decoder));
+		$!result.keep(PreparedStatement.new(:$!name, :$!client, :@!input-types, :@columns, :$decoder));
 	}
 	method failed(%values) {
 		$!result.break(X::Server.new('Could not prepare', %values));
@@ -1581,11 +1580,11 @@ class Client {
 		$result;
 	}
 
-	method prepare(Str $query, Str :$name = "prepared-{++$!prepare-counter}", :@input-types, PreparedStatement:U :$prepared-statement --> Promise) {
+	method prepare(Str $query, Str :$name = "prepared-{++$!prepare-counter}", :@input-types --> Promise) {
 		my $result = Promise.new;
 		my @types = $!typemap.for-types(@input-types);
 		my @oids = compress-oids(@types».oid);
-		my $protocol = Protocol::Prepare.new(:client(self), :$name, :$result, :$prepared-statement);
+		my $protocol = Protocol::Prepare.new(:client(self), :$name, :$result);
 		self!submit($protocol, [
 			Packet::Parse.new(:$query, :$name, :@oids), Packet::Describe.new(:$name, :type(Prepared)), Packet::Sync.new,
 		]);
