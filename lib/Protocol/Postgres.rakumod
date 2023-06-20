@@ -971,6 +971,26 @@ role TypeMap {
 	method for-oids(@oids) {
 		@oids.map: { self.for-oid($^oid) };
 	}
+
+	multi method encode(Any $input, Type :$type!, Format :$format = Text) {
+		$type.encode($format, $input);
+	}
+	multi method encode(Any $input, Int:D :$oid!, Format :$format = Text) {
+		self.for-oid($oid).encode($format, $input);
+	}
+	multi method encode(Any $input, Any:U :$type = $input.WHAT, Format :$format = Text) {
+		self.for-type($type).encode($format, $input);
+	}
+
+	multi method decode(Blob $input, Type :$type!, Format :$format = Text) {
+		$type.decode($format, $input);
+	}
+	multi method decode(Blob $input, Any:U :$type!, Format :$format = Text) {
+		self.for-type($type).decode($format, $input);
+	}
+	multi method decode(Blob $input, Int:D :$oid!, Format :$format = Text) {
+		self.for-oid($oid).decode($format, $input);
+	}
 }
 
 class TypeMap::Minimal does TypeMap {
