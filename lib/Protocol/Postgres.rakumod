@@ -1421,7 +1421,7 @@ my class Protocol::Close does Protocol {
 class Notification {
 	has Int:D $.sender is required;
 	has Str:D $.channel is required;
-	has Str:D $.message is required;
+	has Str:D $.message is required handles<Str>;
 }
 
 our sub default-typemap() {
