@@ -1132,6 +1132,17 @@ multi compress-formats(@formats where all(@formats) === Text) is default { () }
 multi compress-formats(@formats where all(@formats) === Binary) { (Binary) }
 multi compress-formats(@formats) { @formats }
 
+sub parameter-is-named(Parameter $param) {
+	$param.named && !$param.slurpy;
+}
+my $mu-candidates = any(Mu.can("new")[0].candidates);
+sub code-has-named(Code $candidate) {
+	$candidate === $mu-candidates || parameter-is-named(any($candidate.signature.params));
+}
+sub constructor-is-positional(::Type) {
+	so code-has-named(none(Type.can('new')[0].candidates));
+}
+
 class ResultSet {
 	has Str @.columns is required;
 	has Supply $.rows is required;
@@ -1139,7 +1150,7 @@ class ResultSet {
 	method hash-rows() {
 		$!rows.map(-> @row { hash @!columns Z=> @row });
 	}
-	method object-rows(::Class, Bool :$positional) {
+	method object-rows(::Class, Bool :$positional = constructor-is-positional(Class)) {
 		if $positional {
 			$!rows.map: -> @row { Class.new(|@row) };
 		} else {
@@ -1155,8 +1166,8 @@ class ResultSet {
 	method hashes() { self.hash-rows.list }
 	method hash()   { await self.hash-rows.first }
 
-	method objects(::Class, Bool :$positional) { self.object-rows(Class, :$positional).list }
-	method object(::Class, Bool :$positional) { await self.object-rows(Class, :$positional).first }
+	method objects(::Class, Bool :$positional = constructor-is-positional(Class)) { self.object-rows(Class, :$positional).list }
+	method object(::Class, Bool :$positional = constructor-is-positional(Class)) { await self.object-rows(Class, :$positional).first }
 
 	class Source { ... }
 	class Decoder {
@@ -1545,7 +1556,7 @@ class Client {
 	method add-enum-type(Str $name, ::Enum --> Promise) {
 		self!add-dynamic-type($name, -> $oid { Type::Enum[Enum, $oid] });
 	}
-	method add-composite-type(Str $name, ::Composite, Bool :$positional = False --> Promise) {
+	method add-composite-type(Str $name, ::Composite, Bool :$positional = constructor-is-positional(Composite) --> Promise) {
 		my Pair @attributes = Composite.^attributes.map: { $^attr.name.subst(/ ^ <[$@%&]> '!'? /, '') => $!typemap.for-type($^attr.type) };
 		self!add-dynamic-type($name, -> $oid { Type::Composite[Composite, $oid, @attributes, $positional] });
 	}
@@ -1701,7 +1712,7 @@ This looks up the C<oid> of postgres enum C<$name>, and adds an appriopriate C<T
 
 =head2 add-composite-type(Str $name, ::Composite, Bool :$positional --> Promise)
 
-This looks up the C<oid> of the postgres composite type <$name>, and maps it to C<Composite>; if C<$positional> is set it will use positional constructor arguments, otherwise named ones are used.
+This looks up the C<oid> of the postgres composite type <$name>, and maps it to C<Composite>; if C<$positional> is set it will use positional constructor arguments, otherwise named ones are used; it will use a heuristic by default.
 
 =head2 add-custom-type(Str $name, ::Custom, &from-string?, &to-string?)
 
