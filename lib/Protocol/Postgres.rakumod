@@ -1128,11 +1128,11 @@ my class Authenticator::Password does Authenticator {
 my class Protocol::Authenticating does Protocol {
 	has Authenticator:D $.authenticator is required;
 	has Promise $.startup-promise is required;
-	has &.send-message is required;
+	has &.send-messages is required;
 
 	multi method incoming-message(Packet::Authentication $authentication) {
 		with $!authenticator.incoming-message($authentication) -> $packet {
-			&!send-message($packet);
+			&!send-messages([ $packet ]);
 		}
 		CATCH {
 			when X::Client { $!startup-promise.break($_) }
@@ -1261,7 +1261,7 @@ my role Protocol::ExtendedQuery does Protocol {
 	has ResultSet::Source $.source;
 	has Stage:D $.stage = Parsing;
 	has Supplier $!copy-from;
-	has &.send-message is required;
+	has &.send-messages is required;
 	multi method incoming-message(Packet::DataRow $row) {
 		$!source.add-row($row.values);
 	}
@@ -1276,15 +1276,13 @@ my role Protocol::ExtendedQuery does Protocol {
 		$!stage = CopyingTo;
 		my $supplier = Supplier.new;
 		sub tap($row) {
-			&!send-message(Packet::CopyData.new(:$row));
+			&!send-messages([ Packet::CopyData.new(:$row) ]);
 		}
 		sub done() {
-			&!send-message(Packet::CopyDone.new);
-			&!send-message(Packet::Sync.new);
+			&!send-messages([ Packet::CopyDone.new, Packet::Sync.new ]);
 		}
 		sub quit($reason) {
-			&!send-message(Packet::CopyFail.new(~$reason));
-			&!send-message(Packet::Sync.new);
+			&!send-messages([ Packet::CopyFail.new(~$reason), Packet::Sync.new ]);
 		}
 		my $supply = $supplier.Supply;
 		$supply = $supply.map(*.encode) if $packet.format === Text;
@@ -1469,15 +1467,13 @@ class Client {
 	}
 	has Task @!tasks;
 
-	method !send($packet) {
-		$!outbound-messages.emit($packet);
+	method !send(@packets) {
+		$!outbound-messages.emit(@packets);
 	}
 
 	method !send-next($protocol, @packets) {
 		$!protocol = $protocol;
-		for @packets -> $packet {
-			self!send($packet);
-		}
+		self!send(@packets);
 	}
 
 	method !handle-next() {
@@ -1499,7 +1495,7 @@ class Client {
 	}
 
 	method outbound-data() {
-		$!outbound-data //= $!outbound-messages.Supply.map(*.encode);
+		$!outbound-data //= $!outbound-messages.Supply.map({ [~] @^packets.map(*.encode) });
 	}
 	method incoming-data(Blob:D $data --> Nil) {
 		$!decoder.add-data($data);
@@ -1553,9 +1549,9 @@ class Client {
 		my $authenticator = $password.defined ?? Authenticator::Password.new(:$user, :$password) !! Authenticator::Null.new;
 		my %parameters = :$user, :DateStyle<ISO>, :client_encoding<UTF8>;
 		%parameters<database> = $database with $database;
-		my &send-message = { self!send($^message) };
-		$!protocol = Protocol::Authenticating.new(:client(self), :$authenticator, :$!startup-promise, :&send-message);
-		self!send(OpenPacket::StartupMessage.new(:%parameters));
+		my &send-messages = { self!send(@^messages) };
+		$!protocol = Protocol::Authenticating.new(:client(self), :$authenticator, :$!startup-promise, :&send-messages);
+		self!send([ OpenPacket::StartupMessage.new(:%parameters) ]);
 		$!startup-promise;
 	}
 
@@ -1596,8 +1592,8 @@ class Client {
 
 	method query(Str $query, @values? --> Promise) {
 		my $result = Promise.new;
-		my &send-message = { self!send($^message) };
-		my $protocol = Protocol::BindingQuery.new(:$result, :$!typemap, :&send-message);
+		my &send-messages = { self!send(@^messages) };
+		my $protocol = Protocol::BindingQuery.new(:$result, :$!typemap, :&send-messages);
 
 		my @types = $!typemap.for-types(@values);
 		my @oids = compress-oids(@types».oid);
@@ -1624,8 +1620,8 @@ class Client {
 
 	method execute-prepared(Packet::Bind $bind, ResultSet::Source $source --> Promise) {
 		my $result = Promise.new;
-		my &send-message = { self!send($^message) };
-		my $protocol = Protocol::Execute.new(:$result, :$source, :&send-message);
+		my &send-messages = { self!send(@^messages) };
+		my $protocol = Protocol::Execute.new(:$result, :$source, :&send-messages);
 
 		self!submit($protocol, [ $bind, Packet::Execute.new, Packet::Sync.new ]);
 		$result;
@@ -1639,7 +1635,7 @@ class Client {
 	}
 
 	method terminate(--> Nil) {
-		self!send(Packet::Terminate.new);
+		self!send([ Packet::Terminate.new ]);
 		$!outbound-messages.done;
 	}
 }
