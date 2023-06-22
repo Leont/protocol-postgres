@@ -25,7 +25,7 @@ our package X {
 
 my class EncodeBuffer {
 	has Buf:D $!buffer = Buf.new;
-	method buffer() { Blob.new($!buffer) }
+	method buffer() { Buf.new($!buffer) }
 
 	method write-int32(Int:D $value --> Nil) {
 		$!buffer.write-int32($!buffer.elems, $value, BigEndian);
@@ -100,17 +100,7 @@ my class DecodeBuffer {
 
 my role Serializable {
 	method encode-to(EncodeBuffer $buffer, $value) { ... }
-	method encode($value --> Blob) {
-		my $encoder = EncodeBuffer.new;
-		self.encode-to($encoder, $value);
-		$encoder.buffer;
-	}
-
 	method decode-from(DecodeBuffer $buffer) { ... }
-	method decode(Blob $buffer --> Map) {
-		my $decoder = DecodeBuffer.new($buffer, 0);
-		self.decode-from($decoder);
-	}
 }
 
 my proto map-type(|) { * }
@@ -202,15 +192,13 @@ my role Sequence[Any:U $raw-element-type, Serializable::Integer:U $count-type = 
 }
 multi map-type(Array:U $array-type) { Sequence[$array-type.of] }
 
-my role VarByte[Serializable::Integer:U $count-type, Bool $inclusive = False] does Serializable {
-	my $offset = $inclusive ?? $count-type.size !! 0;
-
+my role VarByte[Serializable::Integer:U $count-type] does Serializable {
 	method encode-to(EncodeBuffer $buffer, Blob $value) {
-		$count-type.encode-to($buffer, $value.elems + $offset);
+		$count-type.encode-to($buffer, $value.elems);
 		$buffer.write-buffer($value);
 	}
 	method decode-from(DecodeBuffer $buffer) {
-		my $count = $count-type.decode-from($buffer) - $offset;
+		my $count = $count-type.decode-from($buffer);
 		$count >= 0 ?? $buffer.read-buffer($count) !! Blob;
 	}
 }
@@ -318,11 +306,14 @@ package Packet {
 	role Base {
 		method header() { ... }
 		method !schema() { state $ = Schema.new }
-		my $packet = Schema.new((:header(Int8), :payload(VarByte[Int32, True])));
 		method encode(--> Blob) {
-			my $header = self.header;
-			my $payload = self!schema.encode(self.Capture.hash);
-			$packet.encode({:$header, :$payload});
+			my $buffer = EncodeBuffer.new;
+			$buffer.write-int8(self.header);
+			$buffer.write-int32(0);
+			self!schema.encode-to($buffer, self.Capture.hash);
+			my $result = $buffer.buffer;
+			$result.write-int32(1, $result.elems - 1, BigEndian);
+			$result;
 		}
 		method decode(Blob $buffer --> Base) {
 			my $decoder = DecodeBuffer.new($buffer, 5);
@@ -645,10 +636,13 @@ package Packet {
 
 package OpenPacket {
 	role Base {
-		my $packet = Schema.new((:payload(VarByte[Int32, True])));
 		method encode(--> Blob) {
-			my $payload = self!schema.encode(self.Capture.hash);
-			$packet.encode({:$payload});
+			my $buffer = EncodeBuffer.new;
+			$buffer.write-int32(0);
+			self!schema.encode-to($buffer, self.Capture.hash);
+			my $result = $buffer.buffer;
+			$result.write-int32(0, $result.elems, BigEndian);
+			$result;
 		}
 		method decode(Blob $buffer --> Base) {
 			my $decoder = DecodeBuffer.new($buffer, 4);
