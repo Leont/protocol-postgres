@@ -1080,7 +1080,7 @@ role TypeMap::Core does TypeMap {
 }
 
 class TypeMap::Native does TypeMap::Core {
-	multi method for-type(List $array) { Type::Array[Type::Str, 1009] }
+	multi method for-type(List $array) { Type::Array[Type::Str, 0] }
 }
 
 class TypeMap::JSON does TypeMap::Core {
