@@ -962,11 +962,55 @@ role Type::Custom[::Custom, Int $oid, &from-string, &to-string] does Type {
 	}
 }
 
+role TypeMap { ... }
+
+my role As {
+	method postgres-type-for(TypeMap $typemap) { ... }
+}
+
+my role As::Direct[::Captured] does As {
+	method postgres-type-for(TypeMap --> Type) {
+		return Captured;
+	}
+}
+my role As::Indirect[::Captured] does As {
+	method postgres-type-for(TypeMap $typemap --> Type) {
+		return $typemap.for-type(Captured);
+	}
+}
+
+my class Type::Wrap does Type {
+	has Int:D $.oid is required;
+	has Type $.inner is required handles <type-object encode-to-text decode-from-text>
+}
+my role As::Oid[Int $oid] does As {
+	method postgres-type-for(TypeMap $typemap --> Type) {
+		my $inner = $typemap.for-oid($oid);
+		$inner.oid === $oid ?? $inner !! Type::Wrap.new(:$oid, :$inner);
+	}
+}
+
+our proto typed-as(|) is export(:typed-as) { * }
+
+multi typed-as(Any $value, Type $type) {
+	$value but As::Direct[$type];
+}
+multi typed-as(Any $value, Any:U $type) {
+	$value but As::Indirect[$type];
+}
+multi typed-as(Any $value, Int $oid) {
+	$value but As::Oid[$oid];
+}
+
 role TypeMap {
-	method for-type(Any --> Type) { ... }
+	proto method for-type(Any --> Type) { * }
+	multi method for-type(As $value --> Type) {
+		$value.postgres-type-for(self);
+	}
 	method for-types(@types) {
 		@types.map: { self.for-type($^type) };
 	}
+
 	method for-oid(Int --> Type) { ... }
 	method for-oids(@oids) {
 		@oids.map: { self.for-oid($^oid) };
@@ -994,7 +1038,7 @@ role TypeMap {
 }
 
 class TypeMap::Minimal does TypeMap {
-	method for-type(Any --> Type) { Type::Str }
+	multi method for-type(Any --> Type) { Type::Str }
 	method for-oid(Int --> Type) { Type::Str }
 }
 

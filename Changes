@@ -4,6 +4,7 @@ Revision history for Protocol-Postgres
     - Automatically detect if constructor for objects/composite is positional
     - Add encode/decode methods to TypeMap
     - Add Str method to Notification
+    - Add typed-as function
 
 0.0.10  2023-06-11T11:38:28+02:00
     - Use non-pretty json output
