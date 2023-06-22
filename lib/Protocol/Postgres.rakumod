@@ -46,7 +46,11 @@ my class EncodeBuffer {
 
 my class DecodeBuffer {
 	has Blob:D $.buffer is required;
-	has Int $!pos = 0;
+	has Int $!pos is built is required;
+
+	method new(Blob:D $buffer, Int $pos) {
+		self.bless(:$buffer, :$pos);
+	}
 
 	method !assert-more-bytes(Int $count, Str $type) {
 		die X::Client.new("Incomplete packet, couldn't read $type") if $!pos + $count > $!buffer.elems;
@@ -104,7 +108,7 @@ my role Serializable {
 
 	method decode-from(DecodeBuffer $buffer) { ... }
 	method decode(Blob $buffer --> Map) {
-		my $decoder = DecodeBuffer.new(:$buffer);
+		my $decoder = DecodeBuffer.new($buffer, 0);
 		self.decode-from($decoder);
 	}
 }
@@ -321,7 +325,8 @@ package Packet {
 			$packet.encode({:$header, :$payload});
 		}
 		method decode(Blob $buffer --> Base) {
-			self.bless(|self!schema.decode($buffer.subbuf(5)));
+			my $decoder = DecodeBuffer.new($buffer, 5);
+			self.bless(|self!schema.decode-from($decoder));
 		}
 	}
 
@@ -646,7 +651,8 @@ package OpenPacket {
 			$packet.encode({:$payload});
 		}
 		method decode(Blob $buffer --> Base) {
-			self.bless(|self!schema.decode($buffer.subbuf(4)));
+			my $decoder = DecodeBuffer.new($buffer, 4);
+			self.bless(|self!schema.decode-from($decoder));
 		}
 	}
 
