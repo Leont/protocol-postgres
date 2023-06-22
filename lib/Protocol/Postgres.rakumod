@@ -1092,9 +1092,10 @@ my role TypeMap::Overlay {
 	has Type %!for-type{Any:U};
 	has Type %!for-oid{Int};
 
-	method add-type(Type $type, Any:U :$type-object = $type.type-object, Int:D :$oid = $type.oid --> Nil) {
+	method add-type(Type $type, Any:U :$type-object = $type.type-object, Int:D :$oid = $type.oid --> Type) {
 		%!for-type{$type-object} = $type;
 		%!for-oid{$oid} = $type;
+		$type;
 	}
 
 	method for-type(Any $type --> Type) {
@@ -1609,8 +1610,8 @@ class Client {
 			my $result = await $p;
 			my ($oid, $array-oid) = $result.array or die X::Client.new("No such type '$name'");
 			my $type = callback($oid);
-			self!add-static-type($type, :$oid);
 			self!add-static-type(Type::Array[$type, $array-oid]) with $array-oid;
+			self!add-static-type($type, :$oid);
 		}
 	}
 	method add-enum-type(Str $name, ::Enum --> Promise) {
