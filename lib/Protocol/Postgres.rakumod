@@ -25,7 +25,7 @@ our package X {
 
 my class EncodeBuffer {
 	has Buf:D $!buffer = Buf.new;
-	method buffer() { Buf.new($!buffer) }
+	method buffer() { $!buffer }
 
 	method write-int32(Int:D $value --> Nil) {
 		$!buffer.write-int32($!buffer.elems, $value, BigEndian);
