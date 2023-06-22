@@ -439,6 +439,16 @@ package Packet {
 		method header(--> 68) {}
 		method !schema() { state $ = Schema.new((:values(Array[Blob]))) }
 		has Blob @.values is required;
+		method decode(Blob $buffer --> Base) {
+			my $decoder = DecodeBuffer.new($buffer, 5);
+			my $count = $decoder.read-int16;
+			my Blob @values;
+			for ^$count {
+				my $length = $decoder.read-int32;
+				@values.push: $length >= 0 ?? $decoder.read-buffer($length) !! Blob;
+			}
+			self.bless(:@values);
+		}
 	}
 
 	class Describe does Base {
