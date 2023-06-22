@@ -45,56 +45,52 @@ my class EncodeBuffer {
 }
 
 my class DecodeBuffer {
-	has Blob:D $.buffer is required;
+	has Blob:D $!buffer is built is required;
+	has Int $!elems = $!buffer.elems;
 	has Int $!pos is built is required;
 
 	method new(Blob:D $buffer, Int $pos) {
 		self.bless(:$buffer, :$pos);
 	}
 
-	method !assert-more-bytes(Int $count, Str $type) {
-		die X::Client.new("Incomplete packet, couldn't read $type") if $!pos + $count > $!buffer.elems;
-	}
-
 	method read-int32() {
-		self!assert-more-bytes(4, 'int32');
+		die X::Client.new("Incomplete packet, couldn't read int32") if $!pos + 4 > $!elems;
 		my $result = $!buffer.read-int32($!pos, BigEndian);
 		$!pos += 4;
 		$result;
 	}
 	method read-int16() {
-		self!assert-more-bytes(2, 'int16');
+		die X::Client.new("Incomplete packet, couldn't read int16") if $!pos + 2 > $!elems;
 		my $result = $!buffer.read-int16($!pos, BigEndian);
 		$!pos += 2;
 		$result;
 	}
 	method read-int8() {
-		self!assert-more-bytes(1, 'int8');
-		my $result = $!buffer.read-int8($!pos++);
-		$result;
+		die X::Client.new("Incomplete packet, couldn't read int8") if $!pos + 1 > $!elems;
+		$!buffer.read-int8($!pos++);
 	}
 	method peek-int8() {
-		self!assert-more-bytes(1, 'int8');
+		die X::Client.new("Incomplete packet, couldn't read int8") if $!pos + 1 > $!elems;
 		$!buffer.read-uint8($!pos);
 	}
 	method read-string() {
 		my $current = $!pos;
 		my $end = $!buffer.elems;
 		$current++ while $current < $end and $!buffer[$current] != 0;
-		self!assert-more-bytes($current - $!pos + 1, 'string');
+		die X::Client.new("Incomplete packet, couldn't read string") if $current + 1 > $!elems;
 		my $result = $!buffer.subbuf($!pos, $current - $!pos);
 		$!pos = $current + 1;
 		$result.decode;
 	}
 	method read-buffer(Int $length) {
-		self!assert-more-bytes($length, 'buffer');
+		die X::Client.new("Incomplete packet, couldn't read buffer") if $!pos + $length > $!elems;
 		my $result = $!buffer.subbuf($!pos, $length);
 		$!pos += $length;
 		$result;
 	}
 
 	method remaining-bytes() {
-		$.buffer.elems - $!pos;
+		$!buffer.elems - $!pos;
 	}
 }
 
