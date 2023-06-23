@@ -172,9 +172,7 @@ my class Tail does Serializable {
 	}
 }
 
-my role Enum[Any:U $enum-type, Any:U $raw-encoding-type] does Serializable {
-	my Serializable:U $encoding-type = map-type($raw-encoding-type);
-
+my role Enum[Any:U $enum-type, Serializable:U $encoding-type] does Serializable {
 	method encode-to(EncodeBuffer $buffer, Enumeration $value) {
 		$encoding-type.encode-to($buffer, $value.value);
 	}
