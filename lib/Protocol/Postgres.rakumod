@@ -107,7 +107,6 @@ my proto map-type(|) { * }
 multi map-type(Serializable $type) { $type }
 
 my role Serializable::Integer does Serializable {
-	method size() { ... }
 	has Int:D $.value is required;
 	method COERCE(Int:D $value) {
 		self.new(:$value);
@@ -115,7 +114,6 @@ my role Serializable::Integer does Serializable {
 }
 
 my class Int32 does Serializable::Integer {
-	method size(--> 4) {}
 	method encode-to(EncodeBuffer $buffer, Int $value) {
 		$buffer.write-int32($value);
 	}
@@ -128,7 +126,6 @@ multi map-type(Int:U) { Int32 }
 multi map-type(Int:D $value) { Int32($value) }
 
 my class Int16 does Serializable::Integer {
-	method size(--> 2) {}
 	method encode-to(EncodeBuffer $buffer, Int $value) {
 		$buffer.write-int16($value);
 	}
@@ -138,7 +135,6 @@ my class Int16 does Serializable::Integer {
 }
 
 my class Int8 does Serializable::Integer {
-	method size(--> 1) {}
 	method encode-to(EncodeBuffer $buffer, Int $value) {
 		$buffer.write-int8($value);
 	}
