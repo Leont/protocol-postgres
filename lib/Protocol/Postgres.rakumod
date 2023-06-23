@@ -517,7 +517,7 @@ package Packet {
 
 	class NegotiateProtocolVersion does Base {
 		method header(--> 118) {}
-		method !schema() { state $ = Schema.new((:newest-minor-version(Int), :unknown-options(Array[Str]))) }
+		method !schema() { state $ = Schema.new((:newest-minor-version(Int), :unknown-options(Sequence[Str, Int32]))) }
 		has Int:D $.newest-minor-version is required;
 		has Str @unknown-options;
 	}
