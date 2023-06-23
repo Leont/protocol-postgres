@@ -95,7 +95,6 @@ my class DecodeBuffer {
 }
 
 my role Serializable {
-	method type(--> Any:U) { ... }
 	method encode-to(EncodeBuffer $buffer, $value) { ... }
 	method encode($value --> Blob) {
 		my $encoder = EncodeBuffer.new;
@@ -114,7 +113,6 @@ my proto map-type(|) { * }
 multi map-type(Serializable $type) { $type }
 
 my role Serializable::Integer does Serializable {
-	method type() { Int }
 	method size() { ... }
 	has Int:D $.value is required;
 	method COERCE(Int:D $value) {
@@ -156,8 +154,6 @@ my class Int8 does Serializable::Integer {
 }
 
 my class String does Serializable {
-	method type() { Str }
-
 	method encode-to(EncodeBuffer $buffer, Str $value) {
 		$buffer.write-string($value);
 	}
@@ -168,8 +164,6 @@ my class String does Serializable {
 multi map-type(Str:U) { String }
 
 my class Tail does Serializable {
-	method type() { Blob }
-
 	method encode-to(EncodeBuffer $buffer, Blob $value) {
 		$buffer.write-buffer($value);
 	}
@@ -180,7 +174,6 @@ my class Tail does Serializable {
 
 my role Enum[Any:U $enum-type, Any:U $raw-encoding-type] does Serializable {
 	my Serializable:U $encoding-type = map-type($raw-encoding-type);
-	method type() { $enum-type }
 
 	method encode-to(EncodeBuffer $buffer, Enumeration $value) {
 		$encoding-type.encode-to($buffer, $value.value);
@@ -192,7 +185,6 @@ my role Enum[Any:U $enum-type, Any:U $raw-encoding-type] does Serializable {
 
 my role Sequence[Any:U $raw-element-type, Serializable::Integer:U $count-type = Int16] does Serializable {
 	my Serializable:U $element-type = map-type($raw-element-type);
-	method type() { Array[$element-type.type] }
 
 	method encode-to(EncodeBuffer $buffer, @values) {
 		$count-type.encode-to($buffer, @values.elems);
@@ -203,13 +195,12 @@ my role Sequence[Any:U $raw-element-type, Serializable::Integer:U $count-type = 
 	method decode-from(DecodeBuffer $buffer) {
 		my $count = $count-type.decode-from($buffer);
 		my @result = (^$count).map: { $element-type.decode-from($buffer) };
-		self.type.new(@result);
+		@result;
 	}
 }
 multi map-type(Array:U $array-type) { Sequence[$array-type.of] }
 
 my role VarByte[Serializable::Integer:U $count-type, Bool $inclusive = False] does Serializable {
-	method type() { Blob }
 	my $offset = $inclusive ?? $count-type.size !! 0;
 
 	method encode-to(EncodeBuffer $buffer, Blob $value) {
@@ -225,7 +216,6 @@ multi map-type(Blob:U) { VarByte[Int32] }
 
 my role Series[Any:U $raw-element-type] does Serializable {
 	my $element-type = map-type($raw-element-type);
-	method type() { Array[$element-type.type] }
 
 	method encode-to(EncodeBuffer $buffer, @values) {
 		for @values -> $value {
@@ -245,7 +235,6 @@ my role Series[Any:U $raw-element-type] does Serializable {
 my role Mapping[Any:U $raw-key-type, Any:U $raw-value-type] does Serializable {
 	my $key-type = map-type($raw-key-type);
 	my $value-type = map-type($raw-value-type);
-	method type() { Hash[$value-type.type, $key-type.type] }
 
 	method encode-to(EncodeBuffer $buffer, $values) {
 		for %($values).sort -> $foo (:$key, :$value) {
@@ -268,7 +257,6 @@ multi map-type(Hash:U $hash-type) { Mapping[$hash-type.keyof, $hash-type.of] }
 
 my class Schema does Serializable {
 	has Pair @.elements is required;
-	method type() { Hash }
 
 	method new(*@raw-elements) {
 		my @elements = @raw-elements.map(-> (:$key, :$value) { $key => map-type($value) });
@@ -290,7 +278,6 @@ my class Schema does Serializable {
 }
 
 my role Object[Any:U $outer] does Serializable {
-	method type() { $outer }
 	method encode-to(EncodeBuffer $encoder, $value) {
 		$outer.schema.encode-to($encoder, $value.Capture.hash);
 	}
