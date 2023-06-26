@@ -226,6 +226,7 @@ my role Series[Any:U $raw-element-type] does Serializable {
 		while $buffer.peek-int8 != 0 {
 			@result.push($element-type.decode-from($buffer));
 		}
+		$buffer.read-int8;
 		@result;
 	}
 }
@@ -248,6 +249,7 @@ my role Mapping[Any:U $raw-key-type, Any:U $raw-value-type] does Serializable {
 			my $value = $value-type.decode-from($buffer);
 			%result{$key} = $value;
 		}
+		$buffer.read-int8;
 		%result;
 	}
 }
