@@ -1556,7 +1556,7 @@ class Client {
 		}
 	}
 	multi method incoming-message(Packet::ErrorResponse $error) {
-		$!protocol.failed-server($error.values);
+		$!protocol.failed-server($error.values) with $!protocol;
 	}
 	multi method incoming-message(Packet::ReadyForQuery $) {
 		$!protocol.finished;
