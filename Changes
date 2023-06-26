@@ -8,6 +8,7 @@ Revision history for Protocol-Postgres
     - Make add-type return Type
     - Make default Array type in TypeMap::Native unspecified
     - Fix encoding of unknown-options in NegotiateProtocolVersion
+    - Refactor error handling to handle disconnects cleaner
 
 0.0.10  2023-06-11T11:38:28+02:00
     - Use non-pretty json output

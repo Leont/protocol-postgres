@@ -1097,7 +1097,16 @@ my role Protocol {
 	proto method incoming-message(Packet::Base $packet) { * }
 	multi method incoming-message(Packet::NoticeResponse $) {}
 	method finished() {}
-	method failed(%values) {}
+	method !failed-description(--> Str) { ... }
+	method failed-client(Str $cause) {
+		my $desc = self!failed-description ~ ': ' ~ $cause;
+		self.failed-exception(X::Client.new($desc));
+	}
+	method failed-server(%values) {
+		my $e = X::Server.new(self!failed-description, %values);
+		self.failed-exception($e);
+	}
+	method failed-exception(Exception $e) { ... }
 }
 
 role Authenticator {
@@ -1157,7 +1166,7 @@ my class Authenticator::Password does Authenticator {
 
 my class Protocol::Authenticating does Protocol {
 	has Authenticator:D $.authenticator is required;
-	has Promise $.startup-promise is required;
+	has Promise $.startup-promise is required handles(:failed-exception<break>);
 	has &.send-messages is required;
 
 	multi method incoming-message(Packet::Authentication $authentication) {
@@ -1173,9 +1182,7 @@ my class Protocol::Authenticating does Protocol {
 	method finished() {
 		$!startup-promise.keep unless $!startup-promise
 	}
-	method failed(%values) {
-		$!startup-promise.break(X::Server.new('Could not authenticate', %values))
-	}
+	method !failed-description(--> 'Could not authenticate') {}
 }
 
 multi compress-formats(@formats where all(@formats) === Text) is default { () }
@@ -1261,7 +1268,7 @@ class ResultSet {
 my class Protocol::Query does Protocol {
 	has TypeMap $.typemap is required;
 	has ResultSet::Source $!source;
-	has Supplier:D $.supplier handles(:finished<done>) is required;
+	has Supplier:D $.supplier handles(:finished<done>, :failed-exception<quit>) is required;
 
 	multi method incoming-message(Packet::RowDescription $row) {
 		my $decoder = ResultSet::Decoder.new($!typemap, $row.fields);
@@ -1279,9 +1286,7 @@ my class Protocol::Query does Protocol {
 		$!source.done with $!source;
 		$!source = Nil;
 	}
-	method failed(%values) {
-		$!supplier.quit('Query got error: ' ~ %values{Message});
-	}
+	method !failed-description(--> 'Could not query') {}
 }
 
 my enum Stage (:Parsing<parse>, :Binding<bind>, :Describing<describe>, :Executing<execute>, :CopyingFrom('copy from'), :CopyingTo('copying to'), :Closing<close>, :Syncing<sync>);
@@ -1346,8 +1351,10 @@ my role Protocol::ExtendedQuery does Protocol {
 	multi method incoming-message(Packet::CloseComplete $) {
 		$!stage = Syncing;
 	}
-	method failed(%values) {
-		my $exception = X::Server.new("Could not $!stage.value()", %values);
+	method !failed-description() {
+		"Could not $!stage.value()";
+	}
+	method failed-exception(Exception $exception) {
 		if not $!result {
 			$!result.break($exception);
 		} elsif $!source {
@@ -1404,7 +1411,7 @@ class PreparedStatement {
 my class Protocol::Prepare does Protocol {
 	has Client:D $.client is required;
 	has Str:D $.name is required;
-	has Promise:D $.result is required;
+	has Promise:D $.result is required handles(:failed-exception<break>);
 	has Type @!input-types;
 	has FieldDescription @!output-types;
 
@@ -1423,9 +1430,7 @@ my class Protocol::Prepare does Protocol {
 		my $decoder = ResultSet::Decoder.new($!client.typemap, @!output-types, True);
 		$!result.keep(PreparedStatement.new(:$!name, :$!client, :@!input-types, :@columns, :$decoder));
 	}
-	method failed(%values) {
-		$!result.break(X::Server.new('Could not prepare', %values));
-	}
+	method !failed-description(--> 'Could not prepare') {}
 }
 
 my class Protocol::Execute does Protocol::ExtendedQuery {
@@ -1437,15 +1442,13 @@ my class Protocol::Execute does Protocol::ExtendedQuery {
 	}
 }
 my class Protocol::Close does Protocol {
-	has Promise $.result is required;
+	has Promise $.result is required handles(:failed-exception<break>);
 	multi method incoming-message(Packet::CloseComplete $) {
 	}
 	method finished() {
 		$!result.keep unless $!result;
 	}
-	method failed(%values) {
-		$!result.break(X::Server.new('Could not close prepared statement', %values));
-	}
+	method !failed-description(--> 'Could not close prepared statement') {}
 }
 
 class Notification {
@@ -1471,15 +1474,11 @@ class Client {
 	submethod TWEAK() {
 		$!disconnected.then: {
 			my $message = $!disconnected ~~ Broken ?? ~$!disconnected.cause !! 'Disconnected';
-			my %error := ErrorMap.new((Message) => $message, (Severity) => 'FATAL');
-			if not $!startup-promise {
-				$!startup-promise.break($!disconnected ~~ Broken ?? $!disconnected.cause !! X::Client.new($message));
-			}
 			if $!protocol {
-				$!protocol.failed(%error);
+				$!protocol.failed-client($message);
 			}
 			for @!tasks -> $ (:$protocol, :@packets) {
-				$protocol.failed(%error);
+				$protocol.failed-client($message);
 			}
 			for %!notification-channel.values -> $channel {
 				$channel.done;
@@ -1516,7 +1515,7 @@ class Client {
 
 	method !submit(Protocol:D $protocol, @packets) {
 		if $!disconnected {
-			$protocol.failed(ErrorMap.new((Message) => 'Disconnected', (Severity) => 'FATAL'));
+			$protocol.failed-client('Disconnected');
 		} elsif $!protocol or not $!startup-promise {
 			@!tasks.push(Task.new(:$protocol, :@packets));
 		} else {
@@ -1555,7 +1554,7 @@ class Client {
 		}
 	}
 	multi method incoming-message(Packet::ErrorResponse $error) {
-		$!protocol.failed($error.values);
+		$!protocol.failed-server($error.values);
 	}
 	multi method incoming-message(Packet::ReadyForQuery $) {
 		$!protocol.finished;
