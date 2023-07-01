@@ -95,7 +95,7 @@ This looks up the `oid` of postgres enum `$name`, and adds an appriopriate `Type
 add-composite-type(Str $name, ::Composite, Bool :$positional --> Promise)
 -------------------------------------------------------------------------
 
-This looks up the `oid` of the postgres composite type <$name>, and maps it to `Composite`; if `$positional` is set it will use positional constructor arguments, otherwise named ones are used.
+This looks up the `oid` of the postgres composite type <$name>, and maps it to `Composite`; if `$positional` is set it will use positional constructor arguments, otherwise named ones are used; it will use a heuristic by default.
 
 add-custom-type(Str $name, ::Custom, &from-string?, &to-string?)
 ----------------------------------------------------------------
