@@ -1,7 +1,10 @@
 Revision history for Protocol-Postgres
 
 {{$NEXT}}
+
+0.0.12  2023-07-10T13:53:23+02:00
     - Add query-status method to Client
+    - Optimize serialization code
 
 0.0.11  2023-07-01T23:03:15+02:00
     - Automatically detect if constructor for objects/composite is positional
