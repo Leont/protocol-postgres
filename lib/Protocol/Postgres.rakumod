@@ -272,6 +272,10 @@ my role Object[Any:U $outer] does Serializable {
 
 multi map-type(ErrorField) { Enum[ErrorField, Int8] }
 
+my sub postfix:<b>(Str $input) {
+	$input.ord;
+}
+
 enum Format <Text Binary>;
 multi map-type(Format) { Enum[Format, Int16] }
 
@@ -314,7 +318,7 @@ package Packet {
 	}
 
 	role Authentication does Base {
-		method header(--> 82) {}
+		method header() { 'R'b }
 		method type() { ... }
 	}
 
@@ -364,14 +368,14 @@ package Packet {
 	}
 
 	class BackendKeyData does Base {
-		method header(--> 75) {}
+		method header() { 'K'b }
 		method !schema() { state $ = Schema.new((:process-id(Int), :secret-key(Int))) }
 		has Int:D $.process-id is required;
 		has Int:D $.secret-key is required;
 	}
 
 	class Bind does Base {
-		method header(--> 66) {}
+		method header() { 'B'b }
 		method !schema() { Schema.new((:portal(Str), :name(Str), :formats(Array[Format]), :fields(Array[Blob]), :result-formats(Array[Format]))) }
 		has Str:D $.portal = '';
 		has Str:D $.name = '';
@@ -381,38 +385,38 @@ package Packet {
 	}
 
 	class BindComplete does Base {
-		method header(--> 50) {}
+		method header() { '2'b }
 	}
 
 	class Close does Base {
-		method header(--> 67) {}
+		method header() { 'C'b }
 		method !schema() { state $ = Schema.new((:type(RequestType), :name(Str))) }
 		has RequestType:D $.type = Prepared;
 		has Str:D $.name = '';
 	}
 
 	class CloseComplete does Base {
-		method header(--> 51) {}
+		method header() { '3'b }
 	}
 
 	class CommandComplete does Base {
-		method header(--> 67) {}
+		method header() { 'C'b }
 		method !schema() { state $ = Schema.new((:tag(Str))) }
 		has Str:D $.tag is required;
 	}
 
 	class CopyData does Base {
-		method header(--> 100) {}
+		method header() { 'd'b }
 		method !schema() { state $ = Schema.new((:row(Tail))) }
 		has Blob:D $.row is required;
 	}
 
 	class CopyDone does Base {
-		method header(--> 99) {}
+		method header() { 'c'b }
 	}
 
 	class CopyFail does Base {
-		method header(--> 102) {}
+		method header() { 'f'b }
 		method !schema() { state $ = Schema.new((:reason(Str))) }
 		has Str:D $.reason is required;
 	}
@@ -424,19 +428,19 @@ package Packet {
 	}
 
 	class CopyInResponse does CopyResponse {
-		method header(--> 71) {}
+		method header() { 'G'b }
 	}
 
 	class CopyOutResponse does CopyResponse {
-		method header(--> 72) {}
+		method header() { 'H'b }
 	}
 
 	class CopyBothResponse does CopyResponse {
-		method header(--> 87) {}
+		method header() { 'W'b }
 	}
 
 	class DataRow does Base {
-		method header(--> 68) {}
+		method header() { 'D'b }
 		method !schema() { state $ = Schema.new((:values(Array[Blob]))) }
 		has Blob @.values is required;
 		method decode(Blob $buffer --> Base) {
@@ -452,35 +456,35 @@ package Packet {
 	}
 
 	class Describe does Base {
-		method header(--> 68) {}
+		method header() { 'D'b }
 		method !schema() { state $ = Schema.new((:type(RequestType), :name(Str))) }
 		has RequestType:D $.type = Portal;
 		has Str:D $.name = '';
 	}
 
 	class EmptyQueryResponse does Base {
-		method header(--> 73) {}
+		method header() { 'I'b }
 	}
 
 	class ErrorResponse does Base {
-		method header(--> 69) {}
+		method header() { 'E'b }
 		method !schema() { state $ = Schema.new((:values(Hash[Str, ErrorField]))) }
 		has Str %.values{ErrorField} is required;
 	}
 
 	class Execute does Base {
-		method header(--> 69) {}
+		method header() { 'E'b }
 		method !schema() { state $ = Schema.new((:name(Str), :maximum-rows(Int))) }
 		has Str:D $.name = '';
 		has Int:D $.maximum-rows = 0;
 	}
 
 	class Flush does Base {
-		method header(--> 72) {}
+		method header() { 'F'b }
 	}
 
 	class FunctionCall does Base {
-		method header(--> 70) {}
+		method header() { 'F'b }
 		method !schema() { state $ = Schema.new((:object-id(Int), :formats(Array[Format]), :values(Array[Blob]), :result-format(Format))) }
 		has Int:D $.object-id is required;
 		has Format @.formats = ();
@@ -489,36 +493,36 @@ package Packet {
 	}
 
 	class FunctionCallResponse does Base {
-		method header(--> 86) {}
+		method header() { 'V'b }
 		method !schema() { state $ = Schema.new((:value(Blob))) }
 		has Blob:D $.value is required;
 	}
 
 	class GSSResponse does Base {
-		method header(--> 112) {}
+		method header() { 'p'b }
 		method !schema() { state $ = Schema.new((:payload(Blob))) }
 		has Blob:D $.payload is required;
 	}
 
 	class NegotiateProtocolVersion does Base {
-		method header(--> 118) {}
+		method header() { 'v'b }
 		method !schema() { state $ = Schema.new((:newest-minor-version(Int), :unknown-options(Sequence[Str, Int32]))) }
 		has Int:D $.newest-minor-version is required;
 		has Str @unknown-options;
 	}
 
 	class NoData does Base {
-		method header(--> 110) {}
+		method header() { 'n'b }
 	}
 
 	class NoticeResponse does Base {
-		method header(--> 78) {}
+		method header() { 'N'b }
 		method !schema() { state $ = Schema.new((:values(Hash[Str, ErrorField]))) }
 		has Str %.values{ErrorField} is required;
 	}
 
 	class NotificationResponse does Base {
-		method header(--> 65) {}
+		method header() { 'A'b }
 		method !schema() { state $ = Schema.new((:sender(Int), :channel(Str), :message(Str))) }
 		has Int:D $.sender is required;
 		has Str:D $.channel is required;
@@ -526,20 +530,20 @@ package Packet {
 	}
 
 	class ParameterDescription does Base {
-		method header(--> 116) {}
+		method header() { 't'b }
 		method !schema() { state $ = Schema.new((:types(Array[Int]))) }
 		has Int @.types is required;
 	}
 
 	class ParameterStatus does Base {
-		method header(--> 83) {}
+		method header() { 'S'b }
 		method !schema() { state $ = Schema.new((:name(Str), :value(Str))) }
 		has Str:D $.name is required;
 		has Str:D $.value is required;
 	}
 
 	class Parse does Base {
-		method header(--> 80) {}
+		method header() { 'P'b }
 		method !schema() { state $ = Schema.new((:name(Str), :query(Str), :oids(Array[Int]))) }
 		has Str:D $.name = '';
 		has Str:D $.query is required;
@@ -547,56 +551,56 @@ package Packet {
 	}
 
 	class ParseComplete does Base {
-		method header(--> 49) {}
+		method header() { '1'b }
 	}
 
 	class PasswordMessage does Base {
-		method header(--> 112) {}
+		method header() { 'p'b }
 		method !schema() { state $ = Schema.new((:password(Str))) }
 		has Str:D $.password is required;
 	}
 
 	class PortalSuspended does Base {
-		method header(--> 115) {}
+		method header() { 's'b }
 	}
 
 	class Query does Base {
-		method header(--> 81) {}
+		method header() { 'Q'b }
 		method !schema() { state $ = Schema.new((:query(Str))) }
 		has Str:D $.query is required;
 	}
 
 	class ReadyForQuery does Base {
-		method header(--> 90) {}
+		method header() { 'Z'b }
 		method !schema() { state $ = Schema.new((:status(QueryStatus))) }
 		has QueryStatus:D $.status is required;
 	}
 
 	class RowDescription does Base {
-		method header(--> 84) {}
+		method header() { 'T'b }
 		method !schema() { state $ = Schema.new((:fields(Array[FieldDescription]))) }
 		has FieldDescription @.fields is required;
 	}
 
 	class SASLInitialResponse does Base {
-		method header(--> 112) {}
+		method header() { 'p'b }
 		method !schema() { state $ = Schema.new((:mechanism(Str), :initial-response(Blob))) }
 		has Str:D $.mechanism is required;
 		has Blob:D $.initial-response is required;
 	}
 
 	class SASLResponse does Base {
-		method header(--> 112) {}
+		method header() { 'p'b }
 		method !schema() { state $ = Schema.new((:client-payload(Tail))) }
 		has Blob:D $.client-payload is required;
 	}
 
 	class Sync does Base {
-		method header(--> 83) {}
+		method header() { 'S'b }
 	}
 
 	class Terminate does Base {
-		method header(--> 88) {}
+		method header() { 'X'b }
 	}
 
 	my sub get-decoder(Packet::Base $class) {
