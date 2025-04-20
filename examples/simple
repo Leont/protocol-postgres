@@ -13,8 +13,19 @@ $client.outbound-data.act({ await $socket.write($^data) }, :done({ $socket.close
 
 await $client.startup($user, $database, $password);
 
+sub io-supply(IO::Handle $handle) {
+	my $supplier = Supplier.new;
+	start {
+		for $handle.lines -> $line {
+			$supplier.emit($line);
+		}
+		$supplier.done;
+	}
+	return $supplier.Supply;
+}
+
 react {
-	whenever $*IN.Supply(:1size).lines {
+	whenever io-supply($*IN) {
 		when / ^ '\\'? q[uit]? / {
 			$client.terminate;
 		}
@@ -49,7 +60,6 @@ react {
 				}
 			}
 		}
-		LAST { $client.terminate }
 	}
 	whenever $client.disconnected {
 		done;
