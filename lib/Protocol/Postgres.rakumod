@@ -1287,8 +1287,8 @@ my class Protocol::Query does Protocol {
 		$!source.add-row($row.values);
 	}
 	multi method incoming-message(Packet::EmptyQueryResponse $) {
-		$!source = ResultSet::Decoder.new($!typemap, []).make-source;
-		$!supplier.emit($!source.resultset);
+		my $source = ResultSet::Decoder.new($!typemap, Array[FieldDescription].new).make-source;
+		$!supplier.emit($source.resultset);
 	}
 	multi method incoming-message(Packet::CommandComplete $) {
 		$!source.done with $!source;
@@ -1394,18 +1394,17 @@ class PreparedStatement {
 	has Str:D $!name is built is required;
 	has Type @!input-types is built is required;
 	has Format @!input-formats = compress-formats(@!input-types».format);
-	has ResultSet::Decoder:D $!decoder is built is required;
-	has Str @.columns is required;
+	has ResultSet::Decoder $!decoder is built is required;
 	has Bool $!closed = False;
 	method execute(@values?) {
 		die X::Client.new('Prepared statement already closed') if $!closed;
 		die X::Client.new("Wrong number or arguments, got {+@values} expected {+@!input-types}") if @values != @!input-types;
 
 		my @fields = @!input-types Z[&type-encode] @values;
-		my @result-formats = $!decoder.compressed-formats;
+		my @result-formats = $!decoder ?? $!decoder.compressed-formats !! ();
 		my $bind = Packet::Bind.new(:$!name, :formats(@!input-formats), :@fields, :@result-formats);
 
-		$!client.execute-prepared($bind, $!decoder.make-source);
+		$!client.execute-prepared($bind, $!decoder);
 	}
 	method close(--> Promise) {
 		$!closed = True;
@@ -1421,22 +1420,20 @@ my class Protocol::Prepare does Protocol {
 	has Str:D $.name is required;
 	has Promise:D $.result is required handles(:failed-exception<break>);
 	has Type @!input-types;
-	has FieldDescription @!output-types;
+	has ResultSet::Decoder $!decoder;
 
 	multi method incoming-message(Packet::ParseComplete $) {
-	}
-	multi method incoming-message(Packet::RowDescription $packet) {
-		@!output-types = $packet.fields;
-	}
-	multi method incoming-message(Packet::NoData $) {
 	}
 	multi method incoming-message(Packet::ParameterDescription $packet) {
 		@!input-types = $!client.typemap.for-oids($packet.types);
 	}
+	multi method incoming-message(Packet::RowDescription $packet) {
+		$!decoder = ResultSet::Decoder.new($!client.typemap, $packet.fields, True);
+	}
+	multi method incoming-message(Packet::NoData $) {
+	}
 	method finished() {
-		my @columns = @!output-types.map(*.name);
-		my $decoder = ResultSet::Decoder.new($!client.typemap, @!output-types, True);
-		$!result.keep(PreparedStatement.new(:$!name, :$!client, :@!input-types, :@columns, :$decoder));
+		$!result.keep(PreparedStatement.new(:$!name, :$!client, :@!input-types, :$!decoder)) unless $!result;
 	}
 	method !failed-description(--> 'Could not prepare') {}
 }
@@ -1657,9 +1654,10 @@ class Client {
 		$result;
 	}
 
-	method execute-prepared(Packet::Bind $bind, ResultSet::Source $source --> Promise) {
+	method execute-prepared(Packet::Bind $bind, ResultSet::Decoder $decoder --> Promise) {
 		my $result = Promise.new;
 		my &send-messages = { self!send(@^messages) };
+		my $source = $decoder ?? $decoder.make-source !! ResultSet::Source;
 		my $protocol = Protocol::Execute.new(:$result, :$source, :&send-messages);
 
 		self!submit($protocol, [ $bind, Packet::Execute.new, Packet::Sync.new ]);
