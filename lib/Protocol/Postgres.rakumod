@@ -255,7 +255,12 @@ my class Schema does Serializable {
 	method decode-from(DecodeBuffer $decoder --> Map) {
 		my %result;
 		for @!elements -> (:$key, :$value) {
-			%result{$key} := $value.decode-from($decoder)
+			with $value {
+				my $decoded = $value.decode-from($decoder);
+				die X::Client("Incorrect value for $key") if $decoded !== $value.value
+			} else {
+				%result{$key} := $value.decode-from($decoder);
+			}
 		}
 		%result;
 	}
