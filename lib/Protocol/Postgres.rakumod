@@ -197,7 +197,7 @@ my role VarByte[Serializable::Integer:U $count-type] does Serializable {
 multi map-type(Blob:U) { VarByte[Int32] }
 
 my role Series[Any:U $raw-element-type] does Serializable {
-	my $element-type = map-type($raw-element-type);
+	my Serializable:U $element-type = map-type($raw-element-type);
 
 	method encode-to(EncodeBuffer $buffer, @values) {
 		for @values -> $value {
@@ -216,8 +216,8 @@ my role Series[Any:U $raw-element-type] does Serializable {
 }
 
 my role Mapping[Any:U $raw-key-type, Any:U $raw-value-type] does Serializable {
-	my $key-type = map-type($raw-key-type);
-	my $value-type = map-type($raw-value-type);
+	my Serializable:U $key-type = map-type($raw-key-type);
+	my Serializable:U $value-type = map-type($raw-value-type);
 
 	method encode-to(EncodeBuffer $buffer, $values) {
 		for %($values).sort -> $foo (:$key, :$value) {
@@ -1626,7 +1626,7 @@ class Client {
 		all(@oids) == 0 ?? () !! @oids;
 	}
 
-	method query(Str $query, @values? --> Promise) {
+	method query(Str:D $query, @values? --> Promise) {
 		my $result = Promise.new;
 		my &send-messages = { self!send(@^messages) };
 		my $protocol = Protocol::BindingQuery.new(:$result, :$!typemap, :&send-messages);
@@ -1643,7 +1643,7 @@ class Client {
 		$result;
 	}
 
-	method prepare(Str $query, Str :$name = "prepared-{++$!prepare-counter}", :@input-types --> Promise) {
+	method prepare(Str:D $query, Str:D :$name = "prepared-{++$!prepare-counter}", :@input-types --> Promise) {
 		my $result = Promise.new;
 		my @types = $!typemap.for-types(@input-types);
 		my @oids = compress-oids(@types».oid);
@@ -1654,7 +1654,7 @@ class Client {
 		$result;
 	}
 
-	method execute-prepared(Packet::Bind $bind, ResultSet::Decoder $decoder --> Promise) {
+	method execute-prepared(Packet::Bind:D $bind, ResultSet::Decoder $decoder --> Promise) {
 		my $result = Promise.new;
 		my &send-messages = { self!send(@^messages) };
 		my $source = $decoder ?? $decoder.make-source !! ResultSet::Source;
