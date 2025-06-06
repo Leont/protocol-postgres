@@ -2,6 +2,10 @@ Revision history for Protocol-Postgres
 
 {{$NEXT}}
 
+0.0.13  2025-06-06T22:48:38+02:00
+    - Don't make a ResultSet for prepared statements with no output data
+    - Add more definedness requirements around encoding arguments
+
 0.0.12  2023-07-10T13:53:23+02:00
     - Add query-status method to Client
     - Optimize serialization code
